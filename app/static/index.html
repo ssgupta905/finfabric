@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FinFabric · IDBI KYC federation console</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logo">◈</span>
+      <span class="wordmark">FinFabric</span>
+      <span class="brand-sub">console</span>
+    </div>
+    <nav class="side-nav">
+      <a href="#/overview"    data-view="overview"    class="side-link">
+        <span class="ico">▤</span> Overview
+      </a>
+      <a href="#/scenarios"   data-view="scenarios"   class="side-link">
+        <span class="ico">▶</span> Scenarios
+      </a>
+      <a href="#/studio"      data-view="studio"      class="side-link">
+        <span class="ico">✎</span> Studio
+      </a>
+      <a href="#/credentials" data-view="credentials" class="side-link">
+        <span class="ico">◉</span> Credentials
+      </a>
+      <a href="#/reviews"     data-view="reviews"     class="side-link">
+        <span class="ico">⚠</span> Review queue
+      </a>
+      <a href="#/adjudicator" data-view="adjudicator" class="side-link">
+        <span class="ico">◇</span> Adjudicator
+      </a>
+      <a href="#/audit"       data-view="audit"       class="side-link">
+        <span class="ico">∴</span> Audit
+      </a>
+    </nav>
+    <div class="side-footer">
+      <button id="show-intro" class="side-sub btn-link">↺ Show intro</button>
+      <div class="pill" id="chain-mode">…</div>
+      <div class="pill" id="gemini-mode">…</div>
+      <a href="/docs" target="_blank" class="side-sub">OpenAPI docs ↗</a>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <div class="crumbs" id="crumbs">Overview</div>
+      <div class="topbar-right">
+        <button class="btn ghost" id="refresh">↻ Refresh</button>
+      </div>
+    </header>
+
+    <section id="view-root" class="view-root"></section>
+  </main>
+
+  <!-- ---------- global floating assistant ---------- -->
+
+  <button id="asst-fab" class="asst-fab" title="Ask the assistant (⌘/)">
+    <span class="asst-fab-ico">✦</span>
+    <span class="asst-fab-lbl">Ask assistant</span>
+  </button>
+
+  <aside class="asst-panel" id="asst-panel" aria-hidden="true">
+    <div class="asst-head">
+      <div>
+        <div class="asst-title">Grounded assistant</div>
+        <div class="asst-sub" id="asst-context">Context: overview</div>
+      </div>
+      <button class="drawer-close" id="asst-close">×</button>
+    </div>
+    <div class="chat-log" id="chat-log"></div>
+    <div class="chat-suggest" id="asst-suggest"></div>
+    <form id="chat-form" class="chat-form">
+      <input id="chat-input" placeholder="Ask about what you're seeing…" autocomplete="off" />
+      <button class="btn primary" type="submit">Send</button>
+    </form>
+  </aside>
+
+  <!-- ---------- detail drawer (right side, only opens over content) ---------- -->
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <div class="drawer-title" id="drawer-title">Detail</div>
+      <button class="drawer-close" id="drawer-close">×</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+
+  <!-- ---------- onboarding modal ---------- -->
+
+  <div class="modal-back" id="intro-modal" aria-hidden="true">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">Welcome to the FinFabric console</div>
+        <button class="drawer-close" id="intro-skip">×</button>
+      </div>
+      <div class="modal-body" id="intro-body">
+        <!-- filled by JS with slides -->
+      </div>
+      <div class="modal-foot">
+        <div class="modal-dots" id="intro-dots"></div>
+        <div>
+          <button class="btn ghost" id="intro-prev">Back</button>
+          <button class="btn primary" id="intro-next">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- view templates ---------- -->
+
+  <template id="tpl-overview">
+    <div class="stack">
+      <div class="banner">
+        <div class="banner-text">
+          <div class="banner-eyebrow">what this demo does · IDBI hackathon</div>
+          <h2>KYC once. Share across banks. Prove one field at a time. Revoke the whole book on a sanctions update — all with zero PII on-chain, aligned to RBI Master Direction &amp; DPDP Act.</h2>
+          <p>Pick a <a href="#/scenarios">scenario</a> to run an onboarding variant, watch decisions stream in real time, drill into any customer record from <a href="#/credentials">Credentials</a>, or inspect the reviewer queue from <a href="#/reviews">Review queue</a>. Ask the assistant (⌘/) any time.</p>
+        </div>
+        <button class="btn primary" id="banner-go">Run a scenario →</button>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h3>Why this matters for IDBI</h3></div>
+          <ul class="invariants">
+            <li><b>Re-KYC cost eliminated.</b> Customer KYC'd by IDBI is re-usable by any partner bank or fintech that trusts the anchored root — no repeat document capture.</li>
+            <li><b>Escape rate = direct fraud liability.</b> Every wrong field auto-accepted is a compliance exposure the bank owns. This demo bounds it at 0%.</li>
+            <li><b>DPDP Act clean.</b> Nothing personal is written on-chain, encrypted or otherwise. An encrypted blob on an immutable ledger is a breach with a delay fuse.</li>
+            <li><b>RBI-friendly audit trail.</b> Every issuance and revocation is an on-chain event; a regulator can verify what happened without asking the bank for logs.</li>
+            <li><b>Instant sanction sweep.</b> Revoking 100,000 customers on a new PMLA list is one transaction from the bank; free for the customer to be revoked.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Design invariants</h3></div>
+          <ul class="invariants">
+            <li><b>32 bytes on-chain per epoch.</b> Whatever the customer count.</li>
+            <li><b>Zero personal data anchored.</b> Only Merkle roots.</li>
+            <li><b>Fresh 128-bit salt per field.</b> Undisclosed ≠ guessable.</li>
+            <li><b>Monotonic revocation version.</b> No rollback to a "still valid" list.</li>
+            <li><b>Gate is deterministic.</b> LLMs only around the edges.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-num" data-k="epochs">—</div><div class="kpi-lbl">Epochs anchored</div><div class="kpi-sub">one tx per epoch, any size</div></div>
+        <div class="kpi"><div class="kpi-num" data-k="credentials">—</div><div class="kpi-lbl">Credentials issued</div><div class="kpi-sub">salted Merkle leaves</div></div>
+        <div class="kpi"><div class="kpi-num" data-k="escape_rate">—</div><div class="kpi-lbl">Escape rate</div><div class="kpi-sub">wrong fields accepted, weighted</div></div>
+        <div class="kpi"><div class="kpi-num" data-k="cost">—</div><div class="kpi-lbl">Total on-chain cost</div><div class="kpi-sub">USD, anchors + revocations</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Epochs</h3>
+          <span class="muted">Newest first · click a row to see its credentials</span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl" id="epochs-table">
+            <thead><tr>
+              <th>Epoch</th><th>Anchored</th><th>Credentials</th><th>Reviewed</th>
+              <th>Escape rate</th><th>Revoked</th><th>Gas</th><th>Cost</th><th>Tx</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Chain activity</h3><span class="muted">last 20 transactions on Base — anchors and revocation publishes</span></div>
+        <ul class="timeline" id="timeline"></ul>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-scenarios">
+    <div class="stack">
+      <div class="card">
+        <div class="card-head">
+          <h3>Pick a scenario</h3>
+          <span class="muted">Each preset shifts the OCR quality, MRZ readability, or attacker behaviour. Click to load, tweak, and run.</span>
+        </div>
+        <div class="scen-grid" id="scen-grid"></div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head">
+            <h3 id="scen-selected">No scenario selected</h3>
+            <span class="muted" id="scen-selected-sub"></span>
+          </div>
+          <p class="scen-desc" id="scen-desc">Pick a card above to configure a run.</p>
+          <div class="scen-form" id="scen-form" hidden>
+            <label>Documents
+              <input id="scen-n" type="number" min="5" max="1000" value="60" />
+            </label>
+            <label>Seed
+              <input id="scen-seed" type="number" value="" placeholder="random" />
+            </label>
+            <label>CER multiplier
+              <input id="scen-cer" type="number" step="0.1" min="0" max="10" value="1.0" />
+              <span class="hint">multiplies all field CERs; 1.0 = as reported, 0.1 = 10× better</span>
+            </label>
+            <label>Address CER
+              <input id="scen-addr" type="number" step="0.001" min="0" max="0.5" value="0.079" />
+              <span class="hint">the hardest field; drives review rate</span>
+            </label>
+            <label>MRZ readable rate
+              <input id="scen-mrz" type="number" step="0.05" min="0" max="1" value="0.94" />
+              <span class="hint">1.0 = MRZ always parses; 0.0 = fully blown out</span>
+            </label>
+            <label>Date-swap attack rate
+              <input id="scen-swap" type="number" step="0.01" min="0" max="1" value="0.02" />
+              <span class="hint">fraction of docs where expiry ↔ issue swap</span>
+            </label>
+            <label>Engine correlation
+              <input id="scen-corr" type="number" step="0.05" min="0" max="1" value="0.35" />
+              <span class="hint">how much of engine B errors match engine A</span>
+            </label>
+            <label>Pipeline pacing (ms/stage)
+              <input id="scen-pace" type="number" min="0" max="1000" step="20" value="140" />
+              <span class="hint">0 = as fast as CPU allows; 140 = follow along; 400 = teach a judge</span>
+            </label>
+            <label class="chk">
+              <input id="scen-anchor" type="checkbox" checked />
+              Anchor accepted credentials into a new epoch
+            </label>
+            <div class="scen-actions">
+              <button class="btn primary" id="scen-run">Run scenario</button>
+              <button class="btn ghost" id="scen-stop" disabled>Stop</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>What this scenario predicts</h3>
+            <span class="muted">Compare against live counters below</span>
+          </div>
+          <div class="expect" id="scen-expect">
+            <em class="muted">Select a scenario to see its expected behaviour.</em>
+          </div>
+          <div class="run-counters">
+            <div class="counter"><div class="counter-lbl">Auto-accepted</div><div class="counter-val" id="c-accept">0</div></div>
+            <div class="counter warn"><div class="counter-lbl">Reviewed</div><div class="counter-val" id="c-review">0</div></div>
+            <div class="counter bad"><div class="counter-lbl">Recapture</div><div class="counter-val" id="c-recap">0</div></div>
+            <div class="counter"><div class="counter-lbl">Raw field acc</div><div class="counter-val" id="c-raw">—</div></div>
+            <div class="counter good"><div class="counter-lbl">Escape rate</div><div class="counter-val" id="c-esc">0.0000%</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="run-progress-card" hidden>
+        <div class="card-head">
+          <h3>Pipeline — live</h3>
+          <span class="muted" id="run-progress-txt">idle</span>
+        </div>
+
+        <!-- Pipeline graph: 6 stage nodes with pulsing edges -->
+        <svg id="pipeline-svg" viewBox="0 0 900 130" preserveAspectRatio="xMidYMid meet"></svg>
+
+        <div class="run-bar-track"><div class="run-bar-fill" id="run-bar"></div></div>
+
+        <div class="cot-row">
+          <div class="cot-panel">
+            <div class="cot-head">
+              <h4>Chain of thought</h4>
+              <span class="muted" id="cot-doc">—</span>
+            </div>
+            <div class="cot-stream" id="cot-stream"></div>
+          </div>
+          <div class="doc-panel">
+            <div class="cot-head">
+              <h4>Current document — data transparency</h4>
+              <span class="muted" id="doc-panel-status">—</span>
+            </div>
+            <div class="doc-inspect" id="doc-inspect">
+              <em class="muted">A document's per-field ground truth, OCR reads, and gate decision will appear here as the pipeline processes it.</em>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="live-table-card" hidden>
+        <div class="card-head"><h3>All decisions so far</h3><span class="muted">click any row to inspect that document</span></div>
+        <div class="table-wrap max-h">
+          <table class="tbl compact" id="live-table">
+            <thead><tr>
+              <th>#</th><th>Doc ID</th><th>Customer</th><th>Action</th><th>Reviewed fields</th><th>Latency</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="run-anchor-card" hidden>
+        <div class="card-head"><h3>Anchor receipt</h3><span class="muted">the only bytes that touched the chain</span></div>
+        <div class="receipt-grid" id="run-anchor-receipt"></div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-studio">
+    <div class="stack">
+      <div class="card">
+        <div class="card-head">
+          <h3>Studio — build and run your own scenario</h3>
+          <span class="muted">For judges and end users. Configure the pipeline knobs in plain language, save the preset, run it live.</span>
+        </div>
+        <div class="studio-grid">
+          <label>Scenario name
+            <input id="st-name" type="text" value="My scenario" />
+          </label>
+          <label>Documents to run
+            <input id="st-n" type="number" min="5" max="500" value="20" />
+          </label>
+
+          <div class="knob">
+            <div class="knob-head">
+              <span class="knob-label">OCR quality</span>
+              <span class="knob-val" id="st-cer-val">baseline (7.9% address CER)</span>
+            </div>
+            <input id="st-cer" type="range" min="0.05" max="1" step="0.05" value="1" />
+            <div class="knob-scale"><span>bank-tuned</span><span>average</span><span>baseline</span></div>
+          </div>
+
+          <div class="knob">
+            <div class="knob-head">
+              <span class="knob-label">Phone photo quality (MRZ readable)</span>
+              <span class="knob-val" id="st-mrz-val">94% readable</span>
+            </div>
+            <input id="st-mrz" type="range" min="0.2" max="1" step="0.02" value="0.94" />
+            <div class="knob-scale"><span>heavy glare</span><span>normal</span><span>studio-lit</span></div>
+          </div>
+
+          <div class="knob">
+            <div class="knob-head">
+              <span class="knob-label">Attacker: expiry-date forgery attempt rate</span>
+              <span class="knob-val" id="st-swap-val">2% baseline</span>
+            </div>
+            <input id="st-swap" type="range" min="0" max="0.5" step="0.02" value="0.02" />
+            <div class="knob-scale"><span>none</span><span>elevated</span><span>full attack</span></div>
+          </div>
+
+          <div class="knob">
+            <div class="knob-head">
+              <span class="knob-label">OCR engine correlation</span>
+              <span class="knob-val" id="st-corr-val">35% (independent-ish)</span>
+            </div>
+            <input id="st-corr" type="range" min="0" max="1" step="0.05" value="0.35" />
+            <div class="knob-scale"><span>fully independent</span><span>typical</span><span>same glare</span></div>
+          </div>
+        </div>
+
+        <div class="studio-preview" id="st-preview">
+          <b>What this configures:</b>
+          <span id="st-preview-txt">A baseline scenario. Address CER 7.9%, MRZ readable 94%, low attack rate. Expect ~14% docs to review, 0% escape rate.</span>
+        </div>
+
+        <div class="studio-actions">
+          <button class="btn primary" id="st-run">Run this scenario</button>
+          <button class="btn ghost" id="st-save">Save preset</button>
+          <span class="muted" id="st-saved-hint">Saved presets appear in the Scenarios list.</span>
+        </div>
+      </div>
+
+      <div class="card" id="st-progress-card" hidden>
+        <div class="card-head">
+          <h3>Live pipeline</h3>
+          <span class="muted" id="st-progress-txt">idle</span>
+        </div>
+        <svg id="st-pipeline-svg" viewBox="0 0 900 130" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="run-bar-track"><div class="run-bar-fill" id="st-bar"></div></div>
+        <div class="run-counters">
+          <div class="counter"><div class="counter-lbl">Auto-accepted</div><div class="counter-val" id="st-accept">0</div></div>
+          <div class="counter warn"><div class="counter-lbl">Reviewed</div><div class="counter-val" id="st-review">0</div></div>
+          <div class="counter bad"><div class="counter-lbl">Recapture</div><div class="counter-val" id="st-recap">0</div></div>
+          <div class="counter good"><div class="counter-lbl">Escape rate</div><div class="counter-val" id="st-esc">0.0000%</div></div>
+        </div>
+        <div class="cot-row">
+          <div class="cot-panel">
+            <div class="cot-head"><h4>Chain of thought</h4></div>
+            <div class="cot-stream" id="st-cot"></div>
+          </div>
+          <div class="doc-panel">
+            <div class="cot-head"><h4>Current customer</h4></div>
+            <div class="doc-inspect" id="st-inspect"><em class="muted">First customer detail will appear here.</em></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="st-anchor-card" hidden>
+        <div class="card-head"><h3>Anchor receipt</h3></div>
+        <div class="receipt-grid" id="st-anchor-receipt"></div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-credentials">
+    <div class="stack">
+      <div class="card">
+        <div class="card-head">
+          <h3>Customer KYC records</h3>
+          <span class="muted">Each row is a customer whose KYC has been anchored. Click to see per-field decisions, verify a selective disclosure, revoke, or step through the Merkle proof.</span>
+        </div>
+        <div class="cred-filters">
+          <label>Epoch
+            <select id="cred-epoch"></select>
+          </label>
+          <label>Status
+            <select id="cred-status">
+              <option value="all">All</option>
+              <option value="active">Active</option>
+              <option value="revoked">Revoked</option>
+            </select>
+          </label>
+          <label class="grow">Search
+            <input id="cred-q" type="text" placeholder="doc id, DID, or field value" />
+          </label>
+        </div>
+        <div class="table-wrap max-h">
+          <table class="tbl" id="cred-table">
+            <thead><tr>
+              <th>#</th><th>Doc ID</th><th>Name</th><th>DOB</th><th>Nationality</th>
+              <th>Status</th><th>Root</th><th></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="pager" id="cred-pager"></div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-reviews">
+    <div class="stack">
+      <div class="card">
+        <div class="card-head">
+          <h3>KYC officer queue</h3>
+          <span class="muted">Documents the gate could not auto-accept — surfaced to a human officer with the specific failed signal per field.</span>
+        </div>
+        <div class="cred-filters">
+          <label>Epoch
+            <select id="rev-epoch"></select>
+          </label>
+        </div>
+        <div class="table-wrap max-h">
+          <table class="tbl" id="rev-table">
+            <thead><tr>
+              <th>Doc ID</th><th>Action</th><th>MRZ</th><th>Reviewed fields</th><th>Reasons</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-adjudicator">
+    <div class="stack">
+      <div class="card">
+        <div class="card-head">
+          <h3>VLM Adjudicator — third opinion before a human sees the file</h3>
+          <span class="muted">Instead of routing the ~5% edge cases to a KYC officer, the gate asks a fresh model (Gemini) that has never seen the two OCR engines' shared glare artefacts. Human review only if it also abstains.</span>
+        </div>
+        <div class="adj-form">
+          <label>Field
+            <select id="adj-field">
+              <option value="date_of_birth">date_of_birth</option>
+              <option value="name">name</option>
+              <option value="nationality">nationality</option>
+              <option value="id_no">id_no</option>
+              <option value="date_of_expiry">date_of_expiry</option>
+            </select>
+          </label>
+          <label>Validator
+            <select id="adj-validator">
+              <option value="date">date</option>
+              <option value="text">text</option>
+              <option value="id_regex">id_regex</option>
+            </select>
+          </label>
+          <label>Engine A read
+            <input id="adj-a" value="1997-10-28" />
+          </label>
+          <label>Engine A confidence
+            <input id="adj-conf" type="number" min="0" max="1" step="0.01" value="0.72" />
+          </label>
+          <label>Engine B read
+            <input id="adj-b" value="1937-10-28" />
+          </label>
+          <label>MRZ evidence
+            <input id="adj-mrz" value="1997-10-28" />
+          </label>
+        </div>
+        <div class="adj-actions">
+          <button class="btn primary" id="run-adj">Ask the VLM</button>
+          <button class="btn ghost" id="load-real-adj" title="Pick a real reviewed field from an epoch">Load one from review queue</button>
+        </div>
+        <div class="adj-result" id="adj-result">
+          <em class="muted">Fill in two disagreeing OCR reads. The VLM will pick the more plausible one, or abstain.</em>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>How the adjudicator fits</h3></div>
+        <ol class="steps">
+          <li><b>Schema</b> validates the value. If it fails outright, the field goes to review — no adjudicator call.</li>
+          <li><b>Agreement</b> + <b>confidence</b> pass the field if both engines produce the same canonical value and confidence clears threshold.</li>
+          <li>If the field is in the <b>MRZ</b>, the check digit rules the tie. The adjudicator is not called.</li>
+          <li>Only when nothing above resolved it does the gate call the adjudicator — a fresh model that has never seen the two engines' shared glare artefacts.</li>
+          <li>If the adjudicator's value passes the validator AND matches one of the engines' canonical output, the field is accepted with signal <code>adjudicator: true</code>. Otherwise the field escalates to review.</li>
+        </ol>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-audit">
+    <div class="stack">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head">
+            <h3>Compliance audit report</h3>
+            <button class="btn primary" id="run-report">Generate</button>
+          </div>
+          <div class="report" id="audit-report"><em class="muted">Click Generate to produce a grounded report from current state.</em></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Revocation timeline</h3></div>
+          <ul class="timeline" id="rev-timeline"></ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>All chain transactions</h3></div>
+        <div class="table-wrap max-h">
+          <table class="tbl">
+            <thead><tr>
+              <th>Kind</th><th>Epoch</th><th>Version</th><th>Root / list hash</th><th>Gas</th><th>Anchored</th><th>Tx</th>
+            </tr></thead>
+            <tbody id="tx-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ---------- drawer sub-templates ---------- -->
+
+  <template id="tpl-drawer-credential">
+    <div class="drawer-section">
+      <div class="drawer-kvs" id="cred-kvs"></div>
+      <div class="drawer-actions">
+        <button class="btn ghost" id="drawer-copy-did">Copy subject DID</button>
+        <button class="btn danger" id="drawer-revoke">Revoke</button>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h4>Fields &amp; decisions</h4>
+      <table class="tbl compact drawer-fields">
+        <thead><tr><th>Field</th><th>Value</th><th>Truth</th><th>Signals</th><th></th></tr></thead>
+        <tbody id="drawer-fields-body"></tbody>
+      </table>
+      <div class="signal-legend">
+        <span class="muted">Signals:</span>
+        <span class="signal ok">s</span> schema
+        <span class="signal ok">a</span> agreement
+        <span class="signal ok">c</span> confidence
+        <span class="signal ok">m</span> MRZ
+        <span class="signal ok">j</span> adjudicator
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h4>Selective disclosure</h4>
+      <p class="muted">Pick which fields to reveal. Nothing about withheld fields will appear in the presentation.</p>
+      <div class="reveal-grid" id="drawer-reveal"></div>
+      <div class="drawer-actions">
+        <button class="btn primary" id="drawer-verify">Verify (honest)</button>
+        <button class="btn danger"  id="drawer-tamper">Tamper &amp; verify</button>
+      </div>
+      <div class="verify-out" id="drawer-verify-out"></div>
+    </div>
+
+    <div class="drawer-section">
+      <h4>Merkle proof</h4>
+      <div class="proof-picker">
+        <label>Field
+          <select id="drawer-proof-field"></select>
+        </label>
+        <button class="btn ghost" id="drawer-proof-load">Show path</button>
+      </div>
+      <div class="proof-view" id="drawer-proof-view"><em class="muted">Pick a field to inspect its walk from leaf to epoch root.</em></div>
+    </div>
+  </template>
+
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/autoplay.js"></script>
+</body>
+</html>

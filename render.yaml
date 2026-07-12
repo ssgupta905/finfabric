@@ -1,0 +1,21 @@
+# One-click infra for Render. After pushing this repo to GitHub, go to
+# https://render.com/deploy and paste the repo URL — Render reads this file
+# and creates the service. Set GEMINI_API_KEY in the dashboard after.
+services:
+  - type: web
+    name: finfabric-demo
+    runtime: python
+    region: singapore   # closest to India for judges
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: USE_LIVE_CHAIN
+        value: "0"
+      - key: GEMINI_API_KEY
+        sync: false      # set manually in Render dashboard
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: PYTHON_VERSION
+        value: "3.11"
+    healthCheckPath: /api/health
