@@ -45,6 +45,7 @@ from agent import adjudicator as agent_adj # noqa: E402
 from agent import copilot as agent_copilot # noqa: E402
 from app import issuance                   # noqa: E402
 from app import workflow as wfx            # noqa: E402
+from app import db as app_db               # noqa: E402
 from app.capabilities import capability_descriptions  # noqa: E402
 
 app = FastAPI(title="FinFabric console")
@@ -245,6 +246,7 @@ def health():
         "mode": "live" if _live() else "fixture",
         "gemini_enabled": agent_gemini.enabled(),
         "gemini_model": agent_gemini.model_name() if agent_gemini.enabled() else None,
+        "db": app_db.describe(),
         "fields": [{"name": f.name, "label": f.label, "in_mrz": f.in_mrz,
                     "validator": f.validator} for f in FIELDS],
         "startup_at": _state["startup_at"],

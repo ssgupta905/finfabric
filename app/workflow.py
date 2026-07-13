@@ -4,60 +4,38 @@ A workflow is a directed acyclic graph of capability nodes. The engine
 executes them in topological order, streaming a per-node event so the UI
 can pulse the graph in real time.
 
-Persistence uses SQLite because the free-tier host is single-instance and
-sleeps between requests — no need for a proper DB. `DATABASE_URL` overrides
-if the host provides a real Postgres."""
+Persistence is via SQLAlchemy Core, which switches transparently between
+SQLite (local dev) and Postgres (Render / any host with DATABASE_URL)."""
 
 from __future__ import annotations
 
 import json
 import random
-import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from sqlalchemy import select, update, delete, insert, func
+
 from app.capabilities import CAPABILITIES
+from app.db import engine, init_schema, workflows as wf_table
 
 REPO = Path(__file__).resolve().parents[1]
-DB_PATH = REPO / "workflows.db"
 
 
-# ---------- persistence (SQLite) -----------------------------------------
-
-def _conn():
-    c = sqlite3.connect(DB_PATH)
-    c.row_factory = sqlite3.Row
-    return c
-
+# ---------- persistence --------------------------------------------------
 
 def init_db():
-    with _conn() as c:
-        c.executescript("""
-            CREATE TABLE IF NOT EXISTS workflows (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                description TEXT,
-                config_json TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                run_count INTEGER DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                workflow_id INTEGER,
-                started_at INTEGER,
-                stats_json TEXT
-            );
-        """)
+    init_schema()
     _seed_default_workflows()
 
 
 def _seed_default_workflows():
     """Ship 3 banking-native starter workflows so the UI has something to
     show on the first cold-start."""
-    with _conn() as c:
-        count = c.execute("SELECT COUNT(*) FROM workflows").fetchone()[0]
+    with engine().connect() as c:
+        count = c.execute(select(func.count()).select_from(wf_table)).scalar_one()
         if count > 0: return
 
     starters = [
@@ -121,43 +99,47 @@ def _seed_default_workflows():
         save_workflow(w["name"], w["description"], w["config"])
 
 
+def _row_to_dict(r) -> dict:
+    return {
+        "id": r.id, "name": r.name, "description": r.description,
+        "config": json.loads(r.config_json),
+        "created_at": r.created_at, "run_count": r.run_count or 0,
+    }
+
+
 def save_workflow(name: str, description: str, config: dict) -> int:
-    with _conn() as c:
-        cur = c.execute(
-            "INSERT INTO workflows (name, description, config_json, created_at) VALUES (?, ?, ?, ?)",
-            (name, description, json.dumps(config), int(time.time())),
-        )
-        return cur.lastrowid
+    with engine().begin() as c:
+        result = c.execute(insert(wf_table).values(
+            name=name, description=description,
+            config_json=json.dumps(config), created_at=int(time.time()),
+            run_count=0,
+        ))
+        pk = result.inserted_primary_key
+        return pk[0] if pk else None
 
 
 def list_workflows() -> list[dict]:
-    with _conn() as c:
-        rows = c.execute("SELECT * FROM workflows ORDER BY id DESC").fetchall()
-    return [{
-        "id": r["id"], "name": r["name"], "description": r["description"],
-        "config": json.loads(r["config_json"]),
-        "created_at": r["created_at"], "run_count": r["run_count"],
-    } for r in rows]
+    with engine().connect() as c:
+        rows = c.execute(select(wf_table).order_by(wf_table.c.id.desc())).all()
+    return [_row_to_dict(r) for r in rows]
 
 
 def get_workflow(wid: int) -> Optional[dict]:
-    with _conn() as c:
-        r = c.execute("SELECT * FROM workflows WHERE id = ?", (wid,)).fetchone()
-    if not r: return None
-    return {"id": r["id"], "name": r["name"], "description": r["description"],
-            "config": json.loads(r["config_json"]),
-            "created_at": r["created_at"], "run_count": r["run_count"]}
+    with engine().connect() as c:
+        r = c.execute(select(wf_table).where(wf_table.c.id == wid)).first()
+    return _row_to_dict(r) if r else None
 
 
 def delete_workflow(wid: int) -> bool:
-    with _conn() as c:
-        c.execute("DELETE FROM workflows WHERE id = ?", (wid,))
+    with engine().begin() as c:
+        c.execute(delete(wf_table).where(wf_table.c.id == wid))
     return True
 
 
 def bump_run_count(wid: int):
-    with _conn() as c:
-        c.execute("UPDATE workflows SET run_count = run_count + 1 WHERE id = ?", (wid,))
+    with engine().begin() as c:
+        c.execute(update(wf_table).where(wf_table.c.id == wid).values(
+            run_count=wf_table.c.run_count + 1))
 
 
 # ---------- execution engine ---------------------------------------------
