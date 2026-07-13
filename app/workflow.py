@@ -232,6 +232,32 @@ def _preview(v):
     return s if len(s) <= 80 else s[:77] + "…"
 
 
+def run_batch(config: dict, records: list[dict], pace_ms: int = 0) -> dict:
+    """Non-streaming batch execution. Returns a bundle suitable for the
+    PDF report. Skips SSE overhead; used by upload endpoint."""
+    bundle_runs = []
+    for rec in records:
+        events = []
+        result = run_workflow(config, rec, on_step=events.append, pace_ms=pace_ms)
+        steps = [{
+            "cap": e["cap"], "ok": e.get("ok"),
+            "detail": e.get("detail"), "duration_ms": e.get("duration_ms"),
+            "value_preview": e.get("value_preview"),
+        } for e in events if e.get("type") == "node_end"]
+        bundle_runs.append({
+            "record": rec,
+            "steps": steps,
+            "ok": result.get("ok", False),
+            "anchor_receipt": result.get("anchor_receipt"),
+        })
+    return {
+        "kind": "batch" if len(records) > 1 else "single",
+        "runs": bundle_runs,
+        "started_at": int(time.time()),
+        "finished_at": int(time.time()),
+    }
+
+
 # ---------- sample records -----------------------------------------------
 
 def sample_record(kind: str = "retail") -> dict:

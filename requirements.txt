@@ -5,3 +5,5 @@ python-dotenv>=1.0
 web3>=6.0
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
+reportlab>=4.0
+python-multipart>=0.0.9

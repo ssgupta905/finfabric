@@ -487,12 +487,105 @@ function loadWorkflow(w) {
   $("wf-desc").textContent = w.description || "";
   $("wf-run").disabled = false;
   $("wf-save").disabled = false;
+  const hasBtns = ["wf-add-btn","wf-rm-btn","wf-refine-btn","wf-upload-run"];
+  hasBtns.forEach(id => { const b = $(id); if (b) b.disabled = false; });
   $$(".preset-item").forEach(el => el.classList.toggle("selected", el.querySelector(".preset-name")?.textContent === w.name));
   drawWorkflow(w.config);
+  refreshEditorDropdowns();
   // Reset run state
   $("wf-record-block").hidden = true;
   $("wf-log-block").hidden = true;
   $("wf-final-block").hidden = true;
+  $("wf-upload-summary").hidden = true;
+  $("wf-pdf-btn").hidden = true;
+}
+
+async function refreshEditorDropdowns() {
+  if (!studioState.workflow) return;
+  const caps = studioState.caps || (studioState.caps = await api("/api/capabilities"));
+  const addCap = $("wf-add-cap"); addCap.innerHTML = "";
+  for (const c of caps) {
+    const o = el("option"); o.value = c.key; o.textContent = `${c.label} [${c.category}]`;
+    addCap.appendChild(o);
+  }
+  const addAfter = $("wf-add-after"); addAfter.innerHTML = '<option value="">(new start)</option>';
+  const rmNode = $("wf-rm-node"); rmNode.innerHTML = "";
+  for (const n of studioState.workflow.config.nodes) {
+    const o1 = el("option"); o1.value = n.id; o1.textContent = `${n.id} · ${n.cap}`; addAfter.appendChild(o1);
+    const o2 = el("option"); o2.value = n.id; o2.textContent = `${n.id} · ${n.cap}`; rmNode.appendChild(o2);
+  }
+  // Auto-select the topological leaf as insertion point
+  if (studioState.workflow.config.nodes.length) {
+    addAfter.value = studioState.workflow.config.nodes[studioState.workflow.config.nodes.length - 1].id;
+  }
+}
+
+async function saveCurrentWorkflow(newConfig, newName) {
+  if (!studioState.workflow) return;
+  const saved = await api("/api/workflows", {
+    name: newName || (studioState.workflow.name + " ·"),
+    description: studioState.workflow.description || "",
+    config: newConfig,
+  });
+  // Also delete the old one to avoid accumulating copies
+  if (studioState.workflow.id && studioState.workflow.id !== saved.id) {
+    await fetch(`/api/workflows/${studioState.workflow.id}`, { method: "DELETE" }).catch(() => {});
+  }
+  await loadPresets();
+  loadWorkflow(saved);
+}
+
+function addNodeInline() {
+  const w = studioState.workflow; if (!w) return;
+  const cap = $("wf-add-cap").value;
+  const after = $("wf-add-after").value;
+  // Pick a unique id
+  const base = cap.split("_")[0];
+  let n = 1;
+  const existingIds = new Set(w.config.nodes.map(x => x.id));
+  let id = base + "_" + n;
+  while (existingIds.has(id)) { n++; id = base + "_" + n; }
+  const cfg = JSON.parse(JSON.stringify(w.config));
+  cfg.nodes.push({ id, cap, params: {} });
+  if (after) cfg.edges.push([after, id]);
+  saveCurrentWorkflow(cfg, w.name);
+}
+
+function removeNodeInline() {
+  const w = studioState.workflow; if (!w) return;
+  const id = $("wf-rm-node").value;
+  const cfg = JSON.parse(JSON.stringify(w.config));
+  cfg.nodes = cfg.nodes.filter(n => n.id !== id);
+  cfg.edges = cfg.edges.filter(([a, b]) => a !== id && b !== id);
+  saveCurrentWorkflow(cfg, w.name);
+}
+
+async function refineInline() {
+  const w = studioState.workflow; if (!w) return;
+  const msg = $("wf-refine-input").value.trim();
+  if (!msg) return;
+  const btn = $("wf-refine-btn");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Refining';
+  try {
+    const r = await api("/api/copilot/refine", { workflow: w, change_request: msg });
+    if (!r.ok) { alert("Refine failed: " + (r.error || "unknown")); return; }
+    $("wf-refine-input").value = "";
+    // Save + reload
+    const saved = await api("/api/workflows", {
+      name: r.workflow.name || w.name + " (refined)",
+      description: r.workflow.description || w.description,
+      config: r.workflow.config,
+    });
+    if (w.id && w.id !== saved.id) {
+      await fetch(`/api/workflows/${w.id}`, { method: "DELETE" }).catch(() => {});
+    }
+    await loadPresets();
+    loadWorkflow(saved);
+  } catch (e) {
+    alert("Refine error: " + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "✦ Refine";
+  }
 }
 
 function drawWorkflow(config, states = {}, activeId = null) {
@@ -605,11 +698,20 @@ async function runWorkflow() {
           <div class="k">Gas</div><div class="v mono">${r.gas_used.toLocaleString()}</div>
           <div class="k">Cost</div><div class="v">$${(r.cost_usd || 0).toFixed(6)}</div>
           <div class="k">Tx</div><div class="v"><a class="mono" target="_blank" href="${r.basescan_url}">${shortHex(r.tx_hash)}</a></div>`;
+      } else {
+        $("wf-final-block").hidden = false;
+        $("wf-final").innerHTML = `<div class="k">Anchor</div><div class="v muted">skipped (upstream flagged the record)</div>`;
       }
     } else if (e.type === "final") {
       es.close();
       studioState.running = false;
       $("wf-run").disabled = false;
+      // Show PDF download for this run
+      if (e.run_id) {
+        const btn = $("wf-pdf-btn");
+        btn.hidden = false;
+        btn.href = `/api/report/pdf/${e.run_id}`;
+      }
     } else if (e.type === "error") {
       es.close();
       studioState.running = false;
@@ -674,10 +776,68 @@ controllers.studio = async () => {
     loadWorkflow(saved);
   });
 
+  // Manual node editor
+  $("wf-add-btn").addEventListener("click", addNodeInline);
+  $("wf-rm-btn").addEventListener("click", removeNodeInline);
+  $("wf-refine-btn").addEventListener("click", refineInline);
+  $("wf-refine-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); refineInline(); }
+  });
+
+  // File upload
+  const drop = $("wf-upload-drop"), fileEl = $("wf-file"), runBtn = $("wf-upload-run");
+  fileEl.addEventListener("change", () => {
+    if (fileEl.files[0]) {
+      $("wf-upload-lbl").textContent = fileEl.files[0].name + " · ready";
+      drop.classList.add("has-file");
+    }
+  });
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("dragover"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault(); drop.classList.remove("dragover");
+    if (e.dataTransfer.files[0]) {
+      fileEl.files = e.dataTransfer.files;
+      fileEl.dispatchEvent(new Event("change"));
+    }
+  });
+  runBtn.addEventListener("click", uploadAndRun);
+
   // Auto-select first preset
   const wfs = await api("/api/workflows");
   if (wfs.length) loadWorkflow(wfs[wfs.length - 1]);
 };
+
+async function uploadAndRun() {
+  const w = studioState.workflow; if (!w) return;
+  const file = $("wf-file").files[0];
+  if (!file) { alert("Choose a CSV file first (or download the sample below to see the expected format)."); return; }
+  const btn = $("wf-upload-run");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Running batch';
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await fetch(`/api/workflow/upload_run?workflow_id=${w.id}`, { method: "POST", body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    const summary = $("wf-upload-summary");
+    summary.hidden = false;
+    summary.innerHTML = `
+      <b>Batch complete.</b> Workflow "${escapeHtml(w.name)}" ran on ${data.total_records} customer records.
+      <div class="kpis">
+        <div class="kpi-mini good"><div class="n">${data.passed}</div><div class="l">auto-passed</div></div>
+        <div class="kpi-mini ${data.flagged ? 'bad' : ''}"><div class="n">${data.flagged}</div><div class="l">flagged</div></div>
+        <div class="kpi-mini bad"><div class="n">${data.critical}</div><div class="l">critical</div></div>
+        <div class="kpi-mini"><div class="n">${data.total_records}</div><div class="l">total</div></div>
+      </div>
+      <a class="btn primary" href="/api/report/pdf/${data.run_id}" download>⬇ Download compliance PDF</a>
+      <div class="muted" style="margin-top:8px">Every flagged record's PDF entry cites the specific RBI / DPDP / PMLA guidance and the SOP-recommended next step.</div>`;
+  } catch (e) {
+    alert("Upload run failed: " + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Run on uploaded data";
+  }
+}
 
 // Legacy studio v1 (kept for reference but no longer bound)
 const _legacyStudio = async () => {

@@ -359,6 +359,46 @@
                 </div>
               </div>
               <svg id="wf-svg" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+
+              <!-- Manual node editor -->
+              <div class="wf-editor">
+                <div class="wf-editor-row">
+                  <label class="wf-editor-lbl">Add node
+                    <select id="wf-add-cap"></select>
+                  </label>
+                  <label class="wf-editor-lbl">After
+                    <select id="wf-add-after"></select>
+                  </label>
+                  <button class="btn ghost" id="wf-add-btn" disabled>+ Add</button>
+                  <label class="wf-editor-lbl">Remove
+                    <select id="wf-rm-node"></select>
+                  </label>
+                  <button class="btn ghost" id="wf-rm-btn" disabled>× Remove</button>
+                </div>
+                <div class="wf-editor-row">
+                  <label class="wf-editor-lbl grow">Refine with copilot
+                    <input id="wf-refine-input" type="text" placeholder='e.g. "add IFSC check between PAN and address"' />
+                  </label>
+                  <button class="btn" id="wf-refine-btn" disabled>✦ Refine</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Upload data -->
+            <div class="studio-block">
+              <h4>Upload customer data</h4>
+              <p class="muted" style="margin: 0 0 8px">Provide a CSV of customer rows. The workflow above will run on every row and you can download a compliance-ready PDF.</p>
+              <div class="wf-upload">
+                <label for="wf-file" class="wf-upload-drop" id="wf-upload-drop">
+                  <span id="wf-upload-lbl">Choose CSV file… or drop it here</span>
+                  <input type="file" id="wf-file" accept=".csv" hidden />
+                </label>
+                <div class="wf-upload-actions">
+                  <a class="btn ghost" href="/api/workflow/sample_csv" download>Download sample CSV</a>
+                  <button class="btn primary" id="wf-upload-run" disabled>Run on uploaded data</button>
+                </div>
+              </div>
+              <div id="wf-upload-summary" hidden></div>
             </div>
 
             <div class="studio-block" id="wf-record-block" hidden>
@@ -372,7 +412,10 @@
             </div>
 
             <div class="studio-block" id="wf-final-block" hidden>
-              <h4>Anchor receipt</h4>
+              <div class="wf-final-head">
+                <h4 style="margin:0">Anchor receipt</h4>
+                <a class="btn primary" id="wf-pdf-btn" download hidden>⬇ Download audit PDF</a>
+              </div>
               <div class="receipt-grid" id="wf-final"></div>
             </div>
           </div>

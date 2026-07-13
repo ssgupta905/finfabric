@@ -954,6 +954,63 @@ label.chk { flex-direction: row; align-items: center; gap: 8px; font-size: 13px;
 .wf-record .k { color: var(--ink-3); }
 .wf-record .v { color: var(--ink); }
 
+/* --- Manual node editor + refine chat --- */
+.wf-editor {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.wf-editor-row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.wf-editor-lbl { display: flex; flex-direction: column; gap: 3px; font-size: 11px; min-width: 130px; }
+.wf-editor-lbl.grow { flex: 1; }
+.wf-editor-lbl select, .wf-editor-lbl input {
+  font-size: 12px; padding: 6px 8px;
+}
+
+/* --- Upload area --- */
+.wf-upload { display: flex; flex-direction: column; gap: 10px; }
+.wf-upload-drop {
+  display: flex; align-items: center; justify-content: center;
+  padding: 22px; min-height: 60px;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: white;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  font-size: 13px;
+}
+.wf-upload-drop:hover { border-color: var(--accent); background: #eef4ff; color: var(--accent); }
+.wf-upload-drop.dragover { border-color: var(--accent); background: #eaf2ff; }
+.wf-upload-drop.has-file { border-style: solid; border-color: var(--good); background: var(--good-tint); color: var(--good); }
+.wf-upload-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+#wf-upload-summary {
+  margin-top: 12px; padding: 12px 14px;
+  background: white;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+#wf-upload-summary .kpis {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 8px; margin: 10px 0;
+}
+#wf-upload-summary .kpi-mini {
+  padding: 8px 10px; border-radius: 6px; background: var(--bg-2);
+  text-align: center;
+}
+#wf-upload-summary .kpi-mini .n { font-size: 18px; font-weight: 600; color: var(--ink); font-family: var(--mono); }
+#wf-upload-summary .kpi-mini .l { font-size: 10px; color: var(--ink-3); }
+#wf-upload-summary .kpi-mini.bad .n { color: var(--bad); }
+#wf-upload-summary .kpi-mini.good .n { color: var(--good); }
+
+.wf-final-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+
 .wf-log { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow: auto; }
 .wf-log-row {
   display: flex; align-items: center; gap: 10px;

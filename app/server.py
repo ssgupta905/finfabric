@@ -20,9 +20,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -46,7 +46,11 @@ from agent import copilot as agent_copilot # noqa: E402
 from app import issuance                   # noqa: E402
 from app import workflow as wfx            # noqa: E402
 from app import db as app_db               # noqa: E402
+from app import pdf_report                 # noqa: E402
 from app.capabilities import capability_descriptions  # noqa: E402
+import csv as csv_mod                      # noqa: E402
+import io as io_mod                        # noqa: E402
+import uuid                                # noqa: E402
 
 app = FastAPI(title="FinFabric console")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -78,6 +82,7 @@ _state = {
     "field_order": [f.name for f in FIELDS],
     "startup_at": time.time(),
     "harness_result": None,
+    "workflow_runs": {},         # run_id -> bundle (for PDF download)
 }
 
 _lock = threading.Lock()
@@ -221,6 +226,11 @@ class AdjudicateRequest(BaseModel):
 
 class CopilotRequest(BaseModel):
     description: str
+
+
+class CopilotRefineRequest(BaseModel):
+    workflow: dict
+    change_request: str
 
 
 class WorkflowSaveRequest(BaseModel):
@@ -726,6 +736,101 @@ def copilot_generate(req: CopilotRequest):
     return agent_copilot.generate_workflow(req.description)
 
 
+@app.post("/api/copilot/refine")
+def copilot_refine(req: CopilotRefineRequest):
+    return agent_copilot.refine_workflow(req.workflow, req.change_request)
+
+
+def _register_run(bundle: dict, workflow: dict) -> str:
+    """Cache a completed run bundle so the PDF endpoint can render it later."""
+    bundle["workflow"] = {
+        "name": workflow.get("name"),
+        "description": workflow.get("description"),
+        "config": workflow.get("config"),
+    }
+    run_id = uuid.uuid4().hex[:12]
+    _state["workflow_runs"][run_id] = bundle
+    # Keep only last 32 runs to bound memory.
+    if len(_state["workflow_runs"]) > 32:
+        oldest = list(_state["workflow_runs"].keys())[0]
+        _state["workflow_runs"].pop(oldest, None)
+    return run_id
+
+
+@app.post("/api/workflow/upload_run")
+async def workflow_upload_run(workflow_id: int, file: UploadFile = File(...)):
+    """Accept a CSV of customer records, run each through the workflow,
+    cache the bundle, and return a run_id the UI can use to download PDF."""
+    w = wfx.get_workflow(workflow_id)
+    if not w:
+        raise HTTPException(404, "workflow not found")
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "file must be UTF-8 CSV")
+
+    reader = csv_mod.DictReader(io_mod.StringIO(text))
+    records = [{k.strip(): (v or "").strip() for k, v in row.items()} for row in reader]
+    if not records:
+        raise HTTPException(400, "CSV had no rows")
+    if len(records) > 200:
+        raise HTTPException(400, "CSV limit is 200 rows for the demo")
+
+    bundle = wfx.run_batch(w["config"], records, pace_ms=0)
+    wfx.bump_run_count(workflow_id)
+    run_id = _register_run(bundle, w)
+
+    total = len(bundle["runs"])
+    passed = sum(1 for r in bundle["runs"] if r.get("ok"))
+    return {
+        "run_id": run_id,
+        "workflow_id": workflow_id,
+        "total_records": total,
+        "passed": passed,
+        "flagged": total - passed,
+        "critical": sum(1 for r in bundle["runs"] for s in r["steps"]
+                        if not s["ok"] and s["cap"] == "sanctions_screen"),
+        "runs": bundle["runs"],
+    }
+
+
+@app.get("/api/workflow/sample_csv")
+def sample_csv():
+    """Emit a well-formed sample CSV so users know the expected columns."""
+    from app.workflow import sample_record
+    rows = [sample_record("retail") for _ in range(3)] + [sample_record("corporate") for _ in range(2)]
+    # Trim to relevant columns
+    cols = ["name", "date_of_birth", "sex", "nationality", "address",
+            "status", "pan", "aadhaar_masked", "gstin", "ifsc", "pincode",
+            "id_no", "period_of_stay", "date_of_issue", "date_of_expiry"]
+    buf = io_mod.StringIO()
+    w = csv_mod.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    w.writeheader()
+    for r in rows:
+        # newlines in address break CSV parsers; flatten
+        r2 = dict(r)
+        if "address" in r2:
+            r2["address"] = r2["address"].replace("\n", ", ")
+        w.writerow(r2)
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="finfabric-sample.csv"'})
+
+
+@app.get("/api/report/pdf/{run_id}")
+def report_pdf(run_id: str):
+    bundle = _state["workflow_runs"].get(run_id)
+    if not bundle:
+        raise HTTPException(404, "run not found — regenerate the workflow run")
+    pdf_bytes = pdf_report.build_pdf(bundle)
+    wf_name = bundle.get("workflow", {}).get("name", "run")
+    safe = "".join(c if c.isalnum() else "_" for c in wf_name)[:40]
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="finfabric-audit-{safe}.pdf"'},
+    )
+
+
 @app.get("/api/workflow/run_stream")
 async def workflow_run_stream(
     workflow_id: Optional[int] = None,
@@ -743,9 +848,25 @@ async def workflow_run_stream(
 
     def worker():
         try:
-            result = wfx.run_workflow(w["config"], record, on_step=q.put, pace_ms=pace_ms)
+            events = []
+            def relay(evt):
+                events.append(evt)
+                q.put(evt)
+            result = wfx.run_workflow(w["config"], record, on_step=relay, pace_ms=pace_ms)
             wfx.bump_run_count(workflow_id)
-            q.put({"type": "final", "ok": result["ok"]})
+            # Cache bundle for PDF export
+            steps = [{"cap": e["cap"], "ok": e.get("ok"), "detail": e.get("detail"),
+                      "duration_ms": e.get("duration_ms")}
+                     for e in events if e.get("type") == "node_end"]
+            bundle = {
+                "kind": "single",
+                "runs": [{"record": record, "steps": steps,
+                          "ok": result.get("ok"), "anchor_receipt": result.get("anchor_receipt")}],
+                "started_at": int(time.time()),
+                "finished_at": int(time.time()),
+            }
+            run_id = _register_run(bundle, w)
+            q.put({"type": "final", "ok": result["ok"], "run_id": run_id})
         except Exception as e:
             q.put({"type": "error", "message": f"{type(e).__name__}: {e}"})
         finally:
