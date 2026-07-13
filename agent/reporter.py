@@ -10,15 +10,15 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from . import gemini
+from . import llm
 
 
 _SYSTEM = (
     "You are a compliance officer writing a short audit note for a "
-    "decentralized identity issuance run. Use only the facts in the JSON "
-    "state provided. Do not invent numbers, addresses, or dates. Structure: "
-    "1) one-sentence executive summary, 2) issuance metrics (bulleted), "
-    "3) privacy posture (bulleted, cite the design choices), "
+    "decentralized-KYC issuance run at an Indian bank. Use only the facts "
+    "in the JSON state provided. Do not invent numbers, addresses, or dates. "
+    "Structure: 1) one-sentence executive summary, 2) issuance metrics "
+    "(bulleted), 3) privacy posture (bulleted, cite DPDP / RBI KYC MD), "
     "4) revocation status, 5) on-chain footprint with cost. "
     "Tone: neutral, precise, ~180 words. Markdown headings."
 )
@@ -27,7 +27,7 @@ _SYSTEM = (
 def generate_report(state: dict) -> dict:
     """Return {report_markdown, model, generated_at, is_fallback}."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    if not gemini.enabled():
+    if not llm.enabled():
         return {
             "report_markdown": _fallback(state, now),
             "model": "deterministic-template",
@@ -38,9 +38,8 @@ def generate_report(state: dict) -> dict:
         "State to audit (JSON):\n" + json.dumps(state, indent=2, default=str) +
         f"\n\nGenerated-at timestamp to use: {now}\n\nWrite the audit note."
     )
-    out = gemini.generate(prompt, system=_SYSTEM, temperature=0.3,
-                          max_tokens=1200, thinking_budget=512, timeout=45)
-    if gemini.is_error(out):
+    out = llm.generate(prompt, task="report", system=_SYSTEM, timeout=45)
+    if llm.is_error(out):
         return {
             "report_markdown": _fallback(state, now) + f"\n\n_LLM unavailable — {out}_",
             "model": "deterministic-template",
@@ -49,7 +48,7 @@ def generate_report(state: dict) -> dict:
         }
     return {
         "report_markdown": out,
-        "model": gemini.model_name(),
+        "model": llm.describe()["primary"],
         "generated_at": now,
         "is_fallback": False,
     }

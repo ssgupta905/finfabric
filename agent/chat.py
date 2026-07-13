@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import gemini
+from . import llm
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -35,11 +35,10 @@ _SYSTEM = (
 def answer(user_message: str, state: dict, history: list[dict] | None = None) -> dict:
     """Return {answer, model, is_fallback}. `history` is a list of
     {"role": "user"|"assistant", "content": str} turns."""
-    if not gemini.enabled():
+    if not llm.enabled():
         return {
-            "answer": "The Gemini API key is not configured, so the chat "
-                      "assistant is disabled. Set GEMINI_API_KEY in .env and "
-                      "restart the server to enable it.",
+            "answer": "No LLM provider is configured. Set OPENAI_API_KEY or "
+                      "GEMINI_API_KEY in .env and restart the server.",
             "model": "fallback",
             "is_fallback": True,
         }
@@ -56,9 +55,8 @@ def answer(user_message: str, state: dict, history: list[dict] | None = None) ->
         context + "\n\n## Conversation so far\n" + convo +
         f"\n\nUSER: {user_message}\nASSISTANT:"
     )
-    out = gemini.generate(prompt, system=_SYSTEM, temperature=0.3,
-                          max_tokens=700, thinking_budget=256, timeout=30)
-    if gemini.is_error(out):
+    out = llm.generate(prompt, task="chat", system=_SYSTEM)
+    if llm.is_error(out):
         return {"answer": f"Assistant is temporarily unavailable ({out}).",
                 "model": "fallback", "is_fallback": True}
-    return {"answer": out, "model": gemini.model_name(), "is_fallback": False}
+    return {"answer": out, "model": llm.describe()["primary"], "is_fallback": False}

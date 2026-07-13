@@ -18,6 +18,12 @@ services:
     envVars:
       - key: USE_LIVE_CHAIN
         value: "0"
+      - key: LLM_PRIMARY
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false                     # set manually in Render dashboard
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
       - key: GEMINI_API_KEY
         sync: false                     # set manually in Render dashboard
       - key: GEMINI_MODEL

@@ -38,6 +38,7 @@ from issuer.anchor_client import (         # noqa: E402
     anchor_epoch_onchain, publish_status, read_root_onchain, _live,
 )
 from agent import gemini as agent_gemini   # noqa: E402
+from agent import llm as agent_llm         # noqa: E402
 from agent import chat as agent_chat       # noqa: E402
 from agent import reporter as agent_report # noqa: E402
 from agent import explainer as agent_explain # noqa: E402
@@ -251,11 +252,14 @@ class WorkflowRunRequest(BaseModel):
 
 @app.get("/api/health")
 def health():
+    llm_info = agent_llm.describe()
     return {
         "ok": True,
         "mode": "live" if _live() else "fixture",
-        "gemini_enabled": agent_gemini.enabled(),
-        "gemini_model": agent_gemini.model_name() if agent_gemini.enabled() else None,
+        "llm": llm_info,
+        # Backward-compat: some old UI reads gemini_enabled/gemini_model.
+        "gemini_enabled": llm_info["gemini_enabled"] or llm_info["openai_enabled"],
+        "gemini_model": llm_info.get("openai_model") or llm_info.get("gemini_model"),
         "db": app_db.describe(),
         "fields": [{"name": f.name, "label": f.label, "in_mrz": f.in_mrz,
                     "validator": f.validator} for f in FIELDS],
@@ -694,9 +698,12 @@ def adjudicate(req: AdjudicateRequest):
         req.field, req.cand_a, req.cand_b, req.conf_a,
         mrz_hint=req.mrz_hint, validator=req.validator,
     )
+    llm_info = agent_llm.describe()
+    model_label = (llm_info.get("openai_model") if llm_info["primary"] == "openai"
+                   else llm_info.get("gemini_model")) or "fallback"
     return {
         "field": req.field, "chosen": result, "abstained": result is None,
-        "model": agent_gemini.model_name() if agent_gemini.enabled() else "fallback",
+        "model": model_label,
     }
 
 

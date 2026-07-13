@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import re
 
-from . import gemini
+from . import llm
 from app.capabilities import capability_descriptions
 
 _SYSTEM = (
@@ -37,8 +37,8 @@ def _capabilities_prompt() -> str:
 
 def generate_workflow(description: str) -> dict:
     """Returns {ok, workflow?, raw?, error?}."""
-    if not gemini.enabled():
-        return {"ok": False, "error": "Copilot needs GEMINI_API_KEY set."}
+    if not llm.enabled():
+        return {"ok": False, "error": "Copilot needs OPENAI_API_KEY or GEMINI_API_KEY set."}
 
     prompt = (
         "Available capabilities (use these keys exactly):\n" +
@@ -46,9 +46,8 @@ def generate_workflow(description: str) -> dict:
         "User request:\n" + description.strip() + "\n\n"
         "Reply with the workflow JSON only."
     )
-    out = gemini.generate(prompt, system=_SYSTEM, temperature=0.2,
-                          max_tokens=1200, thinking_budget=512, timeout=45)
-    if gemini.is_error(out):
+    out = llm.generate(prompt, task="copilot_gen", system=_SYSTEM, timeout=45)
+    if llm.is_error(out):
         return {"ok": False, "error": out}
 
     # Strip possible fences and pull the first JSON object.
@@ -79,7 +78,7 @@ def generate_workflow(description: str) -> dict:
         if a not in ids or b not in ids:
             return {"ok": False, "error": f"edge references unknown node: {a} → {b}"}
 
-    return {"ok": True, "workflow": wf, "model": gemini.model_name()}
+    return {"ok": True, "workflow": wf, "model": llm.describe()["primary"]}
 
 
 _REFINE_SYSTEM = (
@@ -95,8 +94,8 @@ _REFINE_SYSTEM = (
 
 def refine_workflow(current: dict, change_request: str) -> dict:
     """Modify an existing workflow based on a natural-language edit."""
-    if not gemini.enabled():
-        return {"ok": False, "error": "Copilot needs GEMINI_API_KEY set."}
+    if not llm.enabled():
+        return {"ok": False, "error": "Copilot needs an LLM key set."}
 
     prompt = (
         "Available capabilities (use these keys exactly):\n" +
@@ -105,9 +104,8 @@ def refine_workflow(current: dict, change_request: str) -> dict:
         "Change request:\n" + change_request.strip() + "\n\n"
         "Reply with the updated workflow JSON only."
     )
-    out = gemini.generate(prompt, system=_REFINE_SYSTEM, temperature=0.2,
-                          max_tokens=1400, thinking_budget=512, timeout=45)
-    if gemini.is_error(out):
+    out = llm.generate(prompt, task="copilot_refine", system=_REFINE_SYSTEM, timeout=45)
+    if llm.is_error(out):
         return {"ok": False, "error": out}
 
     text = out.strip()
@@ -136,4 +134,4 @@ def refine_workflow(current: dict, change_request: str) -> dict:
     for a, b in edges:
         if a not in ids or b not in ids:
             return {"ok": False, "error": f"edge references unknown node: {a} → {b}"}
-    return {"ok": True, "workflow": wf, "model": gemini.model_name()}
+    return {"ok": True, "workflow": wf, "model": llm.describe()["primary"]}

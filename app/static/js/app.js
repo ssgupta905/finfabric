@@ -38,8 +38,15 @@ async function boot() {
   state.fields = h.fields;
   $("chain-mode").textContent = h.mode === "live" ? "chain · live" : "chain · fixture";
   $("chain-mode").classList.toggle("live", h.mode === "live");
-  $("gemini-mode").textContent = h.gemini_enabled ? `Gemini · ${h.gemini_model.replace("gemini-","")}` : "Gemini · off";
-  $("gemini-mode").classList.toggle("enabled", h.gemini_enabled);
+  // LLM pill — show whichever provider is primary
+  const llm = h.llm || {};
+  let llmLabel = "LLM · off";
+  if (llm.primary === "openai" && llm.openai_enabled)   llmLabel = "OpenAI · " + (llm.openai_model || "").replace("gpt-", "");
+  else if (llm.primary === "gemini" && llm.gemini_enabled) llmLabel = "Gemini · " + (llm.gemini_model || "").replace("gemini-", "");
+  else if (llm.openai_enabled)                          llmLabel = "OpenAI · " + (llm.openai_model || "").replace("gpt-", "");
+  else if (llm.gemini_enabled)                          llmLabel = "Gemini · " + (llm.gemini_model || "").replace("gemini-", "");
+  $("gemini-mode").textContent = llmLabel;
+  $("gemini-mode").classList.toggle("enabled", llm.openai_enabled || llm.gemini_enabled);
 
   window.addEventListener("hashchange", route);
   $("refresh").addEventListener("click", () => route());
