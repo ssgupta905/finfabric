@@ -322,8 +322,60 @@
       await caption(
         "Batch complete · PDF ready",
         "Every flagged record's PDF entry cites the specific RBI Master Direction paragraph, DPDP Act clause, or PMLA section — and the SOP-recommended next action.",
-        4500
+        3500
       );
+
+      // Actually preview the PDF in-line so viewers see the compliance
+      // report content, not just a download button.
+      const pdfLink = document.querySelector("#wf-upload-summary a[href*='/api/report/pdf/']");
+      const pdfUrl = pdfLink?.getAttribute("href");
+      if (pdfUrl) {
+        const modal = document.createElement("div");
+        modal.className = "autoplay-pdf-modal";
+        modal.innerHTML = `
+          <div class="ap-pdf-inner">
+            <div class="ap-pdf-head">Compliance PDF · generated live from the batch run</div>
+            <iframe src="${pdfUrl}#zoom=110&toolbar=0" class="ap-pdf-frame"></iframe>
+          </div>`;
+        // Inject the styles for the modal on demand.
+        if (!document.getElementById("ap-pdf-style")) {
+          const s = document.createElement("style"); s.id = "ap-pdf-style";
+          s.textContent = `
+            .autoplay-pdf-modal {
+              position: fixed; inset: 0; z-index: 380;
+              background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
+              display: flex; align-items: center; justify-content: center;
+              padding: 40px 20px 120px;
+              animation: apPdfIn 0.35s ease both;
+            }
+            @keyframes apPdfIn { from { opacity: 0; } to { opacity: 1; } }
+            .ap-pdf-inner {
+              background: white; border-radius: 14px; overflow: hidden;
+              width: 900px; max-width: 100%; height: 100%;
+              box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+              display: flex; flex-direction: column;
+            }
+            .ap-pdf-head {
+              padding: 12px 18px;
+              background: linear-gradient(135deg, #0071e3, #7856ff); color: white;
+              font: 600 13px -apple-system, system-ui, sans-serif;
+            }
+            .ap-pdf-frame { flex: 1; border: 0; width: 100%; }
+          `;
+          document.head.appendChild(s);
+        }
+        document.body.appendChild(modal);
+        // Caption over the PDF explaining what's on the page
+        await caption(
+          "Grounded compliance PDF",
+          "Every flagged customer includes the RBI / DPDP / PMLA citation and the SOP-recommended next action. Hand-curated — not LLM-inferred — so it's legally defensible.",
+          4200
+        );
+        hideCaption();
+        // Let the reader scan the PDF (10 seconds)
+        await sleep(10000);
+        modal.remove();
+      }
     }
     hideCaption();
 
