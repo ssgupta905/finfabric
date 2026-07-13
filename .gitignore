@@ -8,3 +8,5 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 contracts/lib/
+workflows.db
+

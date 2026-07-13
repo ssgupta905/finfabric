@@ -42,7 +42,10 @@ from agent import chat as agent_chat       # noqa: E402
 from agent import reporter as agent_report # noqa: E402
 from agent import explainer as agent_explain # noqa: E402
 from agent import adjudicator as agent_adj # noqa: E402
+from agent import copilot as agent_copilot # noqa: E402
 from app import issuance                   # noqa: E402
+from app import workflow as wfx            # noqa: E402
+from app.capabilities import capability_descriptions  # noqa: E402
 
 app = FastAPI(title="FinFabric console")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -213,6 +216,24 @@ class AdjudicateRequest(BaseModel):
     conf_a: float = 0.75
     mrz_hint: Optional[str] = None
     validator: str = "text"
+
+
+class CopilotRequest(BaseModel):
+    description: str
+
+
+class WorkflowSaveRequest(BaseModel):
+    name: str
+    description: str = ""
+    config: dict
+
+
+class WorkflowRunRequest(BaseModel):
+    workflow_id: Optional[int] = None
+    config: Optional[dict] = None
+    record: Optional[dict] = None
+    kind: str = "retail"  # for synth record when `record` is omitted
+    pace_ms: int = 220
 
 
 # ---- health & meta -------------------------------------------------------
@@ -667,6 +688,81 @@ def adjudicate(req: AdjudicateRequest):
     }
 
 
+# ---- workflow builder + copilot ------------------------------------------
+
+@app.get("/api/capabilities")
+def list_capabilities():
+    return capability_descriptions()
+
+
+@app.get("/api/workflows")
+def list_workflows():
+    return wfx.list_workflows()
+
+
+@app.get("/api/workflows/{wid}")
+def get_workflow(wid: int):
+    w = wfx.get_workflow(wid)
+    if not w: raise HTTPException(404, "workflow not found")
+    return w
+
+
+@app.post("/api/workflows")
+def save_workflow(req: WorkflowSaveRequest):
+    wid = wfx.save_workflow(req.name, req.description, req.config)
+    return wfx.get_workflow(wid)
+
+
+@app.delete("/api/workflows/{wid}")
+def delete_workflow(wid: int):
+    wfx.delete_workflow(wid)
+    return {"ok": True}
+
+
+@app.post("/api/copilot/generate")
+def copilot_generate(req: CopilotRequest):
+    return agent_copilot.generate_workflow(req.description)
+
+
+@app.get("/api/workflow/run_stream")
+async def workflow_run_stream(
+    workflow_id: Optional[int] = None,
+    kind: str = "retail",
+    pace_ms: int = 220,
+):
+    """SSE stream of a workflow execution against a synthetic record."""
+    if workflow_id is None:
+        raise HTTPException(400, "workflow_id required")
+    w = wfx.get_workflow(workflow_id)
+    if not w: raise HTTPException(404, "workflow not found")
+    record = wfx.sample_record(kind)
+
+    q: queue.Queue = queue.Queue()
+
+    def worker():
+        try:
+            result = wfx.run_workflow(w["config"], record, on_step=q.put, pace_ms=pace_ms)
+            wfx.bump_run_count(workflow_id)
+            q.put({"type": "final", "ok": result["ok"]})
+        except Exception as e:
+            q.put({"type": "error", "message": f"{type(e).__name__}: {e}"})
+        finally:
+            q.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    async def gen():
+        loop = asyncio.get_event_loop()
+        # Send the record first so the UI can display what we're running on
+        yield f"data: {json.dumps({'type': 'record', 'record': record})}\n\n"
+        while True:
+            evt = await loop.run_in_executor(None, q.get)
+            if evt is None: break
+            yield f"data: {json.dumps(evt, default=str)}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 # ---- legacy: aggregate harness (kept for /api/harness callers) -----------
 
 @app.post("/api/harness")
@@ -707,6 +803,7 @@ def index():
 
 @app.on_event("startup")
 def startup():
+    wfx.init_db()
     _bootstrap()
 
 

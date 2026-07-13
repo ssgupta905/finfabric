@@ -447,9 +447,240 @@ async function runScenario() {
 }
 
 // ============================================================
-// STUDIO
+// STUDIO v2 — agentic workflow builder
 // ============================================================
+const studioState = { workflow: null, running: false };
+
+async function loadPresets() {
+  const wfs = await api("/api/workflows");
+  const list = $("preset-list");
+  list.innerHTML = "";
+  for (const w of wfs) {
+    const item = el("div", "preset-item");
+    item.innerHTML = `
+      <div>
+        <div class="preset-name">${escapeHtml(w.name)}</div>
+        <div class="preset-desc">${escapeHtml(w.description || "")}</div>
+      </div>
+      <div class="preset-meta">${w.config.nodes.length} nodes${w.run_count ? " · " + w.run_count + "×" : ""}</div>`;
+    item.addEventListener("click", () => loadWorkflow(w));
+    list.appendChild(item);
+  }
+}
+
+async function loadCapabilitiesPalette() {
+  const caps = await api("/api/capabilities");
+  const p = $("cap-palette");
+  p.innerHTML = "";
+  for (const c of caps) {
+    const it = el("div", "cap-item");
+    it.dataset.cat = c.category;
+    it.innerHTML = `<span class="cap-dot"></span><span>${escapeHtml(c.label)}</span>`;
+    it.title = `${c.key} — inputs: ${c.inputs.join(", ") || "—"} · outputs: ${c.outputs.join(", ") || "—"}`;
+    p.appendChild(it);
+  }
+}
+
+function loadWorkflow(w) {
+  studioState.workflow = w;
+  $("wf-name").textContent = w.name || "Untitled workflow";
+  $("wf-desc").textContent = w.description || "";
+  $("wf-run").disabled = false;
+  $("wf-save").disabled = false;
+  $$(".preset-item").forEach(el => el.classList.toggle("selected", el.querySelector(".preset-name")?.textContent === w.name));
+  drawWorkflow(w.config);
+  // Reset run state
+  $("wf-record-block").hidden = true;
+  $("wf-log-block").hidden = true;
+  $("wf-final-block").hidden = true;
+}
+
+function drawWorkflow(config, states = {}, activeId = null) {
+  const svg = $("wf-svg");
+  const W = 900, H = 320;
+  const nodes = config.nodes || [];
+  const edges = config.edges || [];
+
+  // Layered layout — topological levels
+  const level = {};
+  const incoming = {};
+  for (const n of nodes) { level[n.id] = 0; incoming[n.id] = 0; }
+  for (const [a, b] of edges) incoming[b] = (incoming[b] || 0) + 1;
+  // BFS: level = 1 + max(source levels)
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [a, b] of edges) {
+      if (level[b] < level[a] + 1) { level[b] = level[a] + 1; changed = true; }
+    }
+  }
+  const maxLevel = Math.max(0, ...Object.values(level));
+  const perLevel = {};
+  for (const n of nodes) {
+    const L = level[n.id];
+    if (!perLevel[L]) perLevel[L] = [];
+    perLevel[L].push(n);
+  }
+  // Position
+  const pos = {};
+  const marginX = 60, marginY = 40;
+  const nodeW = 130, nodeH = 46;
+  const availW = W - marginX * 2, availH = H - marginY * 2;
+  for (let L = 0; L <= maxLevel; L++) {
+    const col = perLevel[L] || [];
+    const x = maxLevel === 0 ? W / 2 : marginX + (availW * L / maxLevel);
+    for (let i = 0; i < col.length; i++) {
+      const y = col.length === 1 ? H / 2 : marginY + (availH * i / (col.length - 1));
+      pos[col[i].id] = { x, y };
+    }
+  }
+
+  let out = '<defs><marker id="wf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#c7c7cc"/></marker></defs>';
+  // edges first
+  for (const [a, b] of edges) {
+    const p1 = pos[a], p2 = pos[b];
+    if (!p1 || !p2) continue;
+    const midX = (p1.x + p2.x) / 2;
+    const path = `M${p1.x + nodeW/2},${p1.y} C${midX},${p1.y} ${midX},${p2.y} ${p2.x - nodeW/2},${p2.y}`;
+    const done = states[a] === "ok" && states[b];
+    out += `<path class="wf-edge ${done ? "done" : ""}" d="${path}" />`;
+  }
+  // nodes
+  for (const n of nodes) {
+    const p = pos[n.id]; if (!p) continue;
+    const cls = ["wf-node"];
+    if (n.id === activeId) cls.push("active");
+    else if (states[n.id] === "ok") cls.push("ok");
+    else if (states[n.id] === "bad") cls.push("bad");
+    out += `<rect class="${cls.join(" ")}" x="${p.x - nodeW/2}" y="${p.y - nodeH/2}" width="${nodeW}" height="${nodeH}" rx="8" ry="8"/>`;
+    out += `<text class="wf-lbl" x="${p.x}" y="${p.y - 3}">${escapeHtml(n.id)}</text>`;
+    out += `<text class="wf-sub" x="${p.x}" y="${p.y + 12}">${escapeHtml(n.cap)}</text>`;
+  }
+  svg.innerHTML = out;
+}
+
+async function runWorkflow() {
+  if (!studioState.workflow) return;
+  if (studioState.running) return;
+  studioState.running = true;
+  $("wf-run").disabled = true;
+  $("wf-log-block").hidden = false;
+  $("wf-final-block").hidden = true;
+  $("wf-log").innerHTML = "";
+
+  const kind = $("wf-record-kind").value;
+  const url = `/api/workflow/run_stream?workflow_id=${studioState.workflow.id}&kind=${kind}&pace_ms=220`;
+  const es = new EventSource(url);
+  const states = {};
+
+  es.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.type === "record") {
+      $("wf-record-block").hidden = false;
+      const rec = e.record;
+      const rows = ["name","pan","gstin","aadhaar_masked","nationality","status","address","ifsc","pincode"]
+        .filter(k => rec[k])
+        .map(k => `<div class="k">${k}</div><div class="v">${escapeHtml(String(rec[k]).slice(0, 60))}</div>`)
+        .join("");
+      $("wf-record").innerHTML = rows;
+    } else if (e.type === "node_start") {
+      drawWorkflow(studioState.workflow.config, states, e.node_id);
+    } else if (e.type === "node_end") {
+      states[e.node_id] = e.ok ? "ok" : "bad";
+      drawWorkflow(studioState.workflow.config, states, null);
+      const row = el("div", "wf-log-row " + (e.ok ? "ok" : "bad"));
+      row.innerHTML = `
+        <span class="step-cap">${escapeHtml(e.cap)}</span>
+        <span class="step-detail">${escapeHtml(e.detail || "")}</span>
+        <span class="step-time">${e.duration_ms ?? 0}ms</span>`;
+      $("wf-log").appendChild(row);
+      $("wf-log").scrollTop = $("wf-log").scrollHeight;
+    } else if (e.type === "run_end") {
+      if (e.anchor_receipt) {
+        const r = e.anchor_receipt;
+        $("wf-final-block").hidden = false;
+        $("wf-final").innerHTML = `
+          <div class="k">Epoch ID</div><div class="v mono">${r.epoch_id}</div>
+          <div class="k">Root</div><div class="v mono">${r.epoch_root_hex}</div>
+          <div class="k">Gas</div><div class="v mono">${r.gas_used.toLocaleString()}</div>
+          <div class="k">Cost</div><div class="v">$${(r.cost_usd || 0).toFixed(6)}</div>
+          <div class="k">Tx</div><div class="v"><a class="mono" target="_blank" href="${r.basescan_url}">${shortHex(r.tx_hash)}</a></div>`;
+      }
+    } else if (e.type === "final") {
+      es.close();
+      studioState.running = false;
+      $("wf-run").disabled = false;
+    } else if (e.type === "error") {
+      es.close();
+      studioState.running = false;
+      $("wf-run").disabled = false;
+      alert("Run error: " + e.message);
+    }
+  };
+  es.onerror = () => {
+    es.close(); studioState.running = false; $("wf-run").disabled = false;
+  };
+}
+
+async function copilotGenerate() {
+  const desc = $("copilot-desc").value.trim();
+  if (!desc) return;
+  const btn = $("copilot-run");
+  const out = $("copilot-out");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Thinking';
+  out.className = "copilot-out"; out.textContent = "Copilot is composing your workflow…";
+  try {
+    const r = await api("/api/copilot/generate", { description: desc });
+    if (!r.ok) {
+      out.className = "copilot-out err";
+      out.textContent = "Copilot: " + (r.error || "failed");
+      return;
+    }
+    // Save it so it appears in presets, then load it
+    const saved = await api("/api/workflows", {
+      name: r.workflow.name || "Copilot workflow",
+      description: r.workflow.description || desc,
+      config: r.workflow.config,
+    });
+    out.className = "copilot-out ok";
+    out.textContent = `Generated "${saved.name}" with ${saved.config.nodes.length} nodes — loaded above.`;
+    await loadPresets();
+    loadWorkflow(saved);
+  } catch (e) {
+    out.className = "copilot-out err";
+    out.textContent = "Error: " + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "✦ Generate workflow";
+  }
+}
+
 controllers.studio = async () => {
+  await Promise.all([loadPresets(), loadCapabilitiesPalette()]);
+  $("copilot-run").addEventListener("click", copilotGenerate);
+  $$("#copilot-suggest .chip").forEach(c => c.addEventListener("click", () => {
+    $("copilot-desc").value = c.dataset.msg;
+    copilotGenerate();
+  }));
+  $("wf-run").addEventListener("click", runWorkflow);
+  $("wf-save").addEventListener("click", async () => {
+    if (!studioState.workflow) return;
+    const name = prompt("Save as:", studioState.workflow.name + " (copy)");
+    if (!name) return;
+    const saved = await api("/api/workflows", {
+      name, description: studioState.workflow.description,
+      config: studioState.workflow.config,
+    });
+    await loadPresets();
+    loadWorkflow(saved);
+  });
+
+  // Auto-select first preset
+  const wfs = await api("/api/workflows");
+  if (wfs.length) loadWorkflow(wfs[wfs.length - 1]);
+};
+
+// Legacy studio v1 (kept for reference but no longer bound)
+const _legacyStudio = async () => {
   const cerLabels = (v) => {
     if (v <= 0.15) return `bank-tuned (address CER ${(v * 7.9).toFixed(2)}%)`;
     if (v <= 0.5)  return `improved (address CER ${(v * 7.9).toFixed(2)}%)`;

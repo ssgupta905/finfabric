@@ -306,94 +306,77 @@
     <div class="stack">
       <div class="card">
         <div class="card-head">
-          <h3>Studio — build and run your own scenario</h3>
-          <span class="muted">For judges and end users. Configure the pipeline knobs in plain language, save the preset, run it live.</span>
+          <h3>Studio — agentic workflow builder</h3>
+          <span class="muted">Compose banking capabilities into a KYC workflow. Ask the copilot to draft one from a plain-language brief, or start from a saved preset. Run it live against a synthetic customer.</span>
         </div>
-        <div class="studio-grid">
-          <label>Scenario name
-            <input id="st-name" type="text" value="My scenario" />
-          </label>
-          <label>Documents to run
-            <input id="st-n" type="number" min="5" max="500" value="20" />
-          </label>
 
-          <div class="knob">
-            <div class="knob-head">
-              <span class="knob-label">OCR quality</span>
-              <span class="knob-val" id="st-cer-val">baseline (7.9% address CER)</span>
+        <div class="studio-cols">
+          <!-- LEFT: Copilot + presets -->
+          <div class="studio-left">
+            <div class="studio-block">
+              <h4>Copilot</h4>
+              <textarea id="copilot-desc" placeholder="e.g. Onboard a corporate NRI customer with GSTIN, sanctions screen and enhanced AML."></textarea>
+              <div class="studio-block-actions">
+                <button class="btn primary" id="copilot-run">✦ Generate workflow</button>
+              </div>
+              <div class="copilot-suggest" id="copilot-suggest">
+                <span class="muted">Try:</span>
+                <button class="chip" data-msg="Onboard a corporate customer with GSTIN validation, IFSC check, and PMLA sanctions screen.">Corporate GSTIN</button>
+                <button class="chip" data-msg="Re-KYC an existing retail customer: verify address and re-anchor.">Re-KYC</button>
+                <button class="chip" data-msg="Onboard an NRI opening an NRE account: PAN, address, PEP check, enhanced AML, sanctions.">NRI onboarding</button>
+                <button class="chip" data-msg="High-risk onboarding pipeline with document classification, all validators, PEP, sanctions and AML risk score.">High-risk full stack</button>
+              </div>
+              <div class="copilot-out" id="copilot-out"></div>
             </div>
-            <input id="st-cer" type="range" min="0.05" max="1" step="0.05" value="1" />
-            <div class="knob-scale"><span>bank-tuned</span><span>average</span><span>baseline</span></div>
-          </div>
 
-          <div class="knob">
-            <div class="knob-head">
-              <span class="knob-label">Phone photo quality (MRZ readable)</span>
-              <span class="knob-val" id="st-mrz-val">94% readable</span>
+            <div class="studio-block">
+              <h4>Presets</h4>
+              <div class="preset-list" id="preset-list"></div>
             </div>
-            <input id="st-mrz" type="range" min="0.2" max="1" step="0.02" value="0.94" />
-            <div class="knob-scale"><span>heavy glare</span><span>normal</span><span>studio-lit</span></div>
-          </div>
 
-          <div class="knob">
-            <div class="knob-head">
-              <span class="knob-label">Attacker: expiry-date forgery attempt rate</span>
-              <span class="knob-val" id="st-swap-val">2% baseline</span>
+            <div class="studio-block">
+              <h4>Capabilities palette</h4>
+              <p class="muted" style="margin: 0 0 8px">The building blocks the copilot composes.</p>
+              <div class="cap-palette" id="cap-palette"></div>
             </div>
-            <input id="st-swap" type="range" min="0" max="0.5" step="0.02" value="0.02" />
-            <div class="knob-scale"><span>none</span><span>elevated</span><span>full attack</span></div>
           </div>
 
-          <div class="knob">
-            <div class="knob-head">
-              <span class="knob-label">OCR engine correlation</span>
-              <span class="knob-val" id="st-corr-val">35% (independent-ish)</span>
+          <!-- RIGHT: Workflow diagram + run -->
+          <div class="studio-right">
+            <div class="studio-block">
+              <div class="wf-head">
+                <div>
+                  <div class="wf-name" id="wf-name">No workflow loaded</div>
+                  <div class="muted" id="wf-desc">Pick a preset on the left or ask the copilot to generate one.</div>
+                </div>
+                <div class="wf-actions">
+                  <select id="wf-record-kind">
+                    <option value="retail">Retail record</option>
+                    <option value="corporate">Corporate record</option>
+                  </select>
+                  <button class="btn ghost" id="wf-save" disabled>Save preset</button>
+                  <button class="btn primary" id="wf-run" disabled>Run workflow</button>
+                </div>
+              </div>
+              <svg id="wf-svg" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
             </div>
-            <input id="st-corr" type="range" min="0" max="1" step="0.05" value="0.35" />
-            <div class="knob-scale"><span>fully independent</span><span>typical</span><span>same glare</span></div>
+
+            <div class="studio-block" id="wf-record-block" hidden>
+              <h4>Customer record being processed</h4>
+              <div class="wf-record" id="wf-record"></div>
+            </div>
+
+            <div class="studio-block" id="wf-log-block" hidden>
+              <h4>Per-node results</h4>
+              <div class="wf-log" id="wf-log"></div>
+            </div>
+
+            <div class="studio-block" id="wf-final-block" hidden>
+              <h4>Anchor receipt</h4>
+              <div class="receipt-grid" id="wf-final"></div>
+            </div>
           </div>
         </div>
-
-        <div class="studio-preview" id="st-preview">
-          <b>What this configures:</b>
-          <span id="st-preview-txt">A baseline scenario. Address CER 7.9%, MRZ readable 94%, low attack rate. Expect ~14% docs to review, 0% escape rate.</span>
-        </div>
-
-        <div class="studio-actions">
-          <button class="btn primary" id="st-run">Run this scenario</button>
-          <button class="btn ghost" id="st-save">Save preset</button>
-          <span class="muted" id="st-saved-hint">Saved presets appear in the Scenarios list.</span>
-        </div>
-      </div>
-
-      <div class="card" id="st-progress-card" hidden>
-        <div class="card-head">
-          <h3>Live pipeline</h3>
-          <span class="muted" id="st-progress-txt">idle</span>
-        </div>
-        <svg id="st-pipeline-svg" viewBox="0 0 900 130" preserveAspectRatio="xMidYMid meet"></svg>
-        <div class="run-bar-track"><div class="run-bar-fill" id="st-bar"></div></div>
-        <div class="run-counters">
-          <div class="counter"><div class="counter-lbl">Auto-accepted</div><div class="counter-val" id="st-accept">0</div></div>
-          <div class="counter warn"><div class="counter-lbl">Reviewed</div><div class="counter-val" id="st-review">0</div></div>
-          <div class="counter bad"><div class="counter-lbl">Recapture</div><div class="counter-val" id="st-recap">0</div></div>
-          <div class="counter good"><div class="counter-lbl">Escape rate</div><div class="counter-val" id="st-esc">0.0000%</div></div>
-        </div>
-        <div class="cot-row">
-          <div class="cot-panel">
-            <div class="cot-head"><h4>Chain of thought</h4></div>
-            <div class="cot-stream" id="st-cot"></div>
-          </div>
-          <div class="doc-panel">
-            <div class="cot-head"><h4>Current customer</h4></div>
-            <div class="doc-inspect" id="st-inspect"><em class="muted">First customer detail will appear here.</em></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" id="st-anchor-card" hidden>
-        <div class="card-head"><h3>Anchor receipt</h3></div>
-        <div class="receipt-grid" id="st-anchor-receipt"></div>
       </div>
     </div>
   </template>
