@@ -817,6 +817,87 @@ def sample_csv():
                     headers={"Content-Disposition": 'attachment; filename="finfabric-sample.csv"'})
 
 
+@app.get("/api/document/schema")
+def document_schema():
+    """Card layout for the extraction studio overlays."""
+    from schema import CARD_W, CARD_H, MRZ_BOX
+    return {
+        "image_url": "/sample_card.jpg",
+        "width": CARD_W, "height": CARD_H,
+        "mrz_box": {"x": MRZ_BOX[0], "y": MRZ_BOX[1], "w": MRZ_BOX[2], "h": MRZ_BOX[3]},
+        "fields": [{
+            "name": f.name, "label": f.label,
+            "box": {"x": f.box[0], "y": f.box[1], "w": f.box[2], "h": f.box[3]},
+            "in_mrz": f.in_mrz, "validator": f.validator,
+        } for f in FIELDS],
+    }
+
+
+@app.get("/api/document/analyze")
+def document_analyze(seed: Optional[int] = None):
+    """Fresh simulated VLM + dual-OCR + MRZ analysis on the sample card.
+    Returns per-field extraction with box, values, confidences and status.
+    The UI paints these on top of sample_card.jpg with staged animation."""
+    import random as _rnd
+    from schema import CARD_W, CARD_H, MRZ_BOX
+    seed = seed if seed is not None else int(time.time()) & 0xFFFF
+    rng = _rnd.Random(seed)
+    doc, _ocr_debug = issuance.run_one(rng, f"extract-{seed}")
+
+    # Look up each decision by field
+    dec_by = {d.field: d for d in doc.decisions}
+
+    field_analyses = []
+    for f in FIELDS:
+        d = dec_by[f.name]
+        # Category for coloring:
+        if d.accepted and d.correct: status = "issued"
+        elif d.accepted and not d.correct: status = "escape"
+        elif not d.accepted and "repaired" in (d.reason or "").lower(): status = "repaired"
+        elif not d.accepted and d.signals.get("mrz") is False: status = "mrz_conflict"
+        elif not d.accepted and d.signals.get("agreement") is False: status = "disagree"
+        else: status = "review"
+        field_analyses.append({
+            "name": f.name, "label": f.label,
+            "box": {"x": f.box[0], "y": f.box[1], "w": f.box[2], "h": f.box[3]},
+            "in_mrz": f.in_mrz,
+            "truth": d.truth, "canonical": d.value,
+            "ocr_a": d.ocr_a, "ocr_a_conf": round(d.ocr_a_conf, 3),
+            "ocr_b": d.ocr_b, "mrz_value": d.mrz_value,
+            "accepted": d.accepted, "correct": d.correct,
+            "signals": d.signals, "reason": d.reason,
+            "status": status,
+        })
+
+    # VLM document classification (mocked deterministically)
+    vlm_classes = ["Passport-style ID", "National residence card", "Aadhaar card",
+                   "PAN card", "Driving licence"]
+    vlm_class = "National residence card"  # matches our sample
+    vlm_conf = 0.94 + rng.random() * 0.05
+
+    return {
+        "seed": seed,
+        "image_url": "/sample_card.jpg",
+        "width": CARD_W, "height": CARD_H,
+        "mrz_box": {"x": MRZ_BOX[0], "y": MRZ_BOX[1], "w": MRZ_BOX[2], "h": MRZ_BOX[3]},
+        "mrz_ok": doc.mrz_ok,
+        "mrz_lines": ([str(doc.truth.get(k, "")) for k in ["name"]] +
+                      # we don't have mrz lines on DocResult; reconstruct short summary
+                      []) or [],
+        "vlm": {"class": vlm_class, "confidence": round(vlm_conf, 3),
+                "alternatives": [{"class": c, "confidence": round(0.05 + rng.random() * 0.4, 3)}
+                                 for c in vlm_classes if c != vlm_class][:3]},
+        "fields": field_analyses,
+        "summary": {
+            "total_fields": len(field_analyses),
+            "auto_issued": sum(1 for a in field_analyses if a["status"] == "issued"),
+            "repaired_from_mrz": sum(1 for a in field_analyses if a["status"] == "repaired"),
+            "to_review": sum(1 for a in field_analyses if a["status"] in ("review", "disagree", "mrz_conflict")),
+            "escapes": sum(1 for a in field_analyses if a["status"] == "escape"),
+        },
+    }
+
+
 @app.get("/api/report/pdf/{run_id}")
 def report_pdf(run_id: str):
     bundle = _state["workflow_runs"].get(run_id)

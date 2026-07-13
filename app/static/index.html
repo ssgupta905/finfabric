@@ -23,6 +23,9 @@
       <a href="#/studio"      data-view="studio"      class="side-link">
         <span class="ico">✎</span> Studio
       </a>
+      <a href="#/extraction"  data-view="extraction"  class="side-link">
+        <span class="ico">◧</span> Extraction
+      </a>
       <a href="#/credentials" data-view="credentials" class="side-link">
         <span class="ico">◉</span> Credentials
       </a>
@@ -419,6 +422,60 @@
               <div class="receipt-grid" id="wf-final"></div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-extraction">
+    <div class="stack">
+      <div class="card">
+        <div class="card-head">
+          <h3>Extraction — VLM + dual-OCR + MRZ</h3>
+          <span class="muted">Watch what the pipeline sees on a real KYC document. Bounding boxes are overlaid on the image; each field's colour tells you what the gate decided.</span>
+        </div>
+        <div class="extraction-actions">
+          <button class="btn primary" id="ex-run">▶ Analyse document</button>
+          <span class="muted" id="ex-status">idle</span>
+          <div class="grow"></div>
+          <div class="ex-legend">
+            <span class="lg lg-issued">issued</span>
+            <span class="lg lg-repaired">MRZ-repaired</span>
+            <span class="lg lg-disagree">engines disagree</span>
+            <span class="lg lg-review">to review</span>
+            <span class="lg lg-escape">escape</span>
+          </div>
+        </div>
+
+        <div class="ex-cols">
+          <div class="ex-viewer">
+            <div class="ex-vlm" id="ex-vlm">
+              <span class="ex-vlm-lbl">VLM classifier</span>
+              <span class="ex-vlm-val" id="ex-vlm-val">—</span>
+            </div>
+            <div class="ex-canvas-wrap">
+              <img id="ex-img" src="/sample_card.jpg" alt="KYC document" />
+              <svg id="ex-overlay" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+
+          <div class="ex-panel">
+            <div class="ex-summary" id="ex-summary">
+              <div class="ex-kpi"><div class="n" id="ex-issued">—</div><div class="l">issued</div></div>
+              <div class="ex-kpi"><div class="n" id="ex-repaired">—</div><div class="l">MRZ-repaired</div></div>
+              <div class="ex-kpi"><div class="n" id="ex-review">—</div><div class="l">to review</div></div>
+              <div class="ex-kpi"><div class="n" id="ex-escapes">—</div><div class="l">escapes</div></div>
+            </div>
+
+            <h4 style="margin-top: 14px">Per-field extraction</h4>
+            <div class="ex-fields" id="ex-fields">
+              <em class="muted">Click <b>Analyse document</b> to run the OCR + VLM pipeline.</em>
+            </div>
+          </div>
+        </div>
+
+        <div class="ex-explain">
+          <b>What the demo simulates:</b> a real deployment routes the image through a document-classification VLM (Gemini or similar), a page-layout detector that produces bounding boxes, two independent OCR recognisers per box, an MRZ decoder that verifies check digits, and finally the confidence gate. The colours and confidence numbers below come from the same simulator that powers Scenarios.
         </div>
       </div>
     </div>

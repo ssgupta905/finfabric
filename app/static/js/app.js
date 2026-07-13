@@ -63,13 +63,13 @@ async function boot() {
 async function route() {
   const path = location.hash.replace(/^#\//, "") || "overview";
   const [name] = path.split("?");
-  const known = ["overview", "scenarios", "studio", "credentials", "reviews", "adjudicator", "audit"];
+  const known = ["overview", "scenarios", "studio", "extraction", "credentials", "reviews", "adjudicator", "audit"];
   const view = known.includes(name) ? name : "overview";
   state.currentView = view;
 
   $$(".side-link").forEach(a => a.classList.toggle("active", a.dataset.view === view));
   const labels = { overview: "Overview", scenarios: "Scenarios", studio: "Studio",
-                   credentials: "Credentials", reviews: "Review queue",
+                   extraction: "Extraction", credentials: "Credentials", reviews: "Review queue",
                    adjudicator: "Adjudicator", audit: "Audit" };
   $("crumbs").textContent = labels[view];
 
@@ -445,6 +445,133 @@ async function runScenario() {
     $("scen-run").disabled = false; $("scen-stop").disabled = true;
   };
 }
+
+// ============================================================
+// EXTRACTION — VLM + dual-OCR document analyser
+// ============================================================
+controllers.extraction = async () => {
+  // Wait for the image to load so we know the natural aspect
+  const img = $("ex-img");
+  if (!img.complete) await new Promise(r => (img.onload = r));
+
+  $("ex-run").addEventListener("click", runExtraction);
+  // Auto-run once on first visit so the view isn't empty
+  await runExtraction();
+};
+
+async function runExtraction() {
+  const btn = $("ex-run");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Analysing';
+  $("ex-status").textContent = "step 1 · document classification…";
+  const svg = $("ex-overlay");
+  svg.innerHTML = "";
+  $("ex-vlm-val").textContent = "…";
+  ["ex-issued", "ex-repaired", "ex-review", "ex-escapes"].forEach(id => $(id).textContent = "—");
+  $("ex-fields").innerHTML = '<em class="muted">Running…</em>';
+
+  const seed = Math.floor(Math.random() * 100000);
+  const r = await api(`/api/document/analyze?seed=${seed}`);
+
+  // Use the schema box coordinate space as the SVG viewBox — pixel-perfect
+  // overlay regardless of the image's rendered size.
+  svg.setAttribute("viewBox", `0 0 ${r.width} ${r.height}`);
+
+  // Stage 1: VLM classification
+  await sleep(500);
+  $("ex-vlm-val").textContent = `${r.vlm.class}  ·  ${(r.vlm.confidence * 100).toFixed(1)}% conf`;
+  $("ex-status").textContent = "step 2 · layout detection…";
+
+  // Stage 2: draw all bounding boxes as skeletons (grey, opacity 0)
+  const nsSvg = "http://www.w3.org/2000/svg";
+  const boxEls = {};
+  for (const f of r.fields) {
+    const b = f.box;
+    const rect = document.createElementNS(nsSvg, "rect");
+    rect.setAttribute("x", b.x); rect.setAttribute("y", b.y);
+    rect.setAttribute("width", b.w); rect.setAttribute("height", b.h);
+    rect.setAttribute("rx", 3);
+    rect.setAttribute("class", `box status-${f.status}`);
+    svg.appendChild(rect);
+    const fill = document.createElementNS(nsSvg, "rect");
+    fill.setAttribute("x", b.x); fill.setAttribute("y", b.y);
+    fill.setAttribute("width", b.w); fill.setAttribute("height", b.h);
+    fill.setAttribute("rx", 3);
+    fill.setAttribute("class", `box box-fill status-${f.status}`);
+    fill.style.opacity = "0";
+    svg.appendChild(fill);
+    const lbl = document.createElementNS(nsSvg, "text");
+    lbl.setAttribute("x", b.x + 4);
+    lbl.setAttribute("y", b.y - 4);
+    lbl.setAttribute("class", "box-lbl");
+    lbl.textContent = f.label;
+    svg.appendChild(lbl);
+    boxEls[f.name] = { rect, fill, lbl };
+  }
+  // MRZ zone
+  const mz = document.createElementNS(nsSvg, "rect");
+  mz.setAttribute("x", r.mrz_box.x); mz.setAttribute("y", r.mrz_box.y);
+  mz.setAttribute("width", r.mrz_box.w); mz.setAttribute("height", r.mrz_box.h);
+  mz.setAttribute("rx", 4);
+  mz.setAttribute("class", "mrz-zone");
+  svg.appendChild(mz);
+
+  await sleep(400);
+
+  // Reveal boxes one by one (top-to-bottom, left-to-right by y then x)
+  const ordered = [...r.fields].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x);
+  for (const f of ordered) {
+    boxEls[f.name].rect.classList.add("show");
+    boxEls[f.name].lbl.classList.add("show");
+    await sleep(90);
+  }
+  $("ex-status").textContent = "step 3 · dual-OCR + MRZ verify…";
+
+  // Fill boxes with status color
+  await sleep(400);
+  for (const f of ordered) {
+    boxEls[f.name].fill.style.opacity = "0.22";
+    await sleep(70);
+  }
+  // MRZ zone reveal
+  mz.classList.add("show");
+
+  // Right-panel population
+  $("ex-status").textContent = "step 4 · gate decisions…";
+  $("ex-issued").textContent = r.summary.auto_issued;
+  $("ex-repaired").textContent = r.summary.repaired_from_mrz;
+  $("ex-review").textContent = r.summary.to_review;
+  $("ex-escapes").textContent = r.summary.escapes;
+
+  const list = $("ex-fields");
+  list.innerHTML = "";
+  for (const f of r.fields) {
+    const item = el("div", `ex-field status-${f.status}`);
+    const ocrDiffers = f.ocr_a !== f.truth;
+    const mrzLine = f.mrz_value ? `<div>MRZ: <span class="repair">${escapeHtml(f.mrz_value)}</span></div>` : "";
+    item.innerHTML = `
+      <div class="f-label">${escapeHtml(f.label)}</div>
+      <div class="f-values">
+        <div>truth: ${escapeHtml(f.truth)}</div>
+        <div>OCR A: <span class="${ocrDiffers ? 'diff' : ''}">${escapeHtml(f.ocr_a)}</span> <span class="muted">(${(f.ocr_a_conf * 100).toFixed(0)}%)</span></div>
+        <div>OCR B: <span class="${f.ocr_b !== f.truth ? 'diff' : ''}">${escapeHtml(f.ocr_b)}</span></div>
+        ${mrzLine}
+      </div>
+      <div class="f-status">${escapeHtml(f.status.replace("_", " "))}</div>`;
+    // Hover a field → highlight its box
+    item.addEventListener("mouseenter", () => {
+      boxEls[f.name].rect.style.strokeWidth = "5";
+    });
+    item.addEventListener("mouseleave", () => {
+      boxEls[f.name].rect.style.strokeWidth = "";
+    });
+    list.appendChild(item);
+  }
+
+  $("ex-status").textContent = `done · analysed in ${r.summary.total_fields} fields`;
+  btn.disabled = false; btn.textContent = "▶ Re-analyse";
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ============================================================
 // STUDIO v2 — agentic workflow builder
