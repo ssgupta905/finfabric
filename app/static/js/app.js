@@ -1212,11 +1212,28 @@ async function openCredentialDrawer(epochId, index) {
       <td class="mono">${escapeHtml(dec.value ?? "—")}</td>
       <td class="mono">${dec.correct ? '' : '<span class="tag bad">≠</span> '}${escapeHtml(dec.truth)}</td>
       <td class="signals-cell">${signalsHtml(dec)}</td>
-      <td><button class="btn ghost">why</button></td>`;
-    tr.querySelector("button").addEventListener("click", async () => {
-      const r = await api("/api/explain", { field: dec.field, cand_a: dec.ocr_a, cand_b: dec.ocr_b,
-        conf: dec.confidence, signals: dec.signals, reason: dec.reason });
-      alert(r.explanation);
+      <td><button class="btn ghost why-btn" data-field="${dec.field}">why</button></td>`;
+    const btn = tr.querySelector(".why-btn");
+    btn.addEventListener("click", async () => {
+      // Toggle: if the explainer row is already open below, remove it.
+      const next = tr.nextSibling;
+      if (next && next.classList && next.classList.contains("why-row")) {
+        next.remove();
+        return;
+      }
+      // Insert loading row.
+      const row = el("tr", "why-row");
+      row.innerHTML = `<td colspan="5"><div class="why-body"><span class="spin dark"></span> Generating explanation…</div></td>`;
+      tr.parentNode.insertBefore(row, tr.nextSibling);
+      try {
+        const r = await api("/api/explain", {
+          field: dec.field, cand_a: dec.ocr_a, cand_b: dec.ocr_b,
+          conf: dec.confidence, signals: dec.signals, reason: dec.reason,
+        });
+        row.querySelector(".why-body").innerHTML = `<b>Why:</b> ${escapeHtml(r.explanation)}`;
+      } catch (e) {
+        row.querySelector(".why-body").innerHTML = `<b>Error:</b> ${escapeHtml(e.message)}`;
+      }
     });
     fb.appendChild(tr);
 

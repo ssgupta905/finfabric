@@ -207,11 +207,25 @@
     ring("#pipeline-svg");
     await caption(
       "Six-stage pipeline · live",
-      "Capture → Extract → Gate → Adjudicate → Commit → Anchor. Chain-of-thought streams doc-by-doc.",
-      3800
+      "Capture → Extract → Gate → Adjudicate → Commit → Anchor. Nodes pulse in sync as each document flows through.",
+      3500
     );
+
+    // Show the live execution below the graph: counters, then CoT stream, then doc inspector.
+    scrollTo(".run-counters", 40);
+    ring(".run-counters");
+    await caption("Rolling counters", "Auto-accepted, reviewed, recapture, escape rate — updating doc-by-doc.", 3200);
+
+    scrollTo(".cot-panel", 40);
+    ring(".cot-panel");
+    await caption("Chain of thought", "Every stage transition emits a human-readable line — blue for stages, green for auto-issued, orange for reviewer routing.", 3800);
+
+    scrollTo(".doc-panel", 40);
+    ring(".doc-panel");
+    await caption("Per-customer transparency", "Truth vs both OCR reads vs MRZ evidence — see exactly why each field passed or was flagged.", 3800);
+
     await waitUntil(() => document.getElementById("run-progress-txt")?.textContent.startsWith("done"), 25000);
-    scrollTo("#run-anchor-card");
+    scrollTo("#run-anchor-card", 40);
     ring("#run-anchor-card");
     await caption("One tx anchors the batch", "10 credentials in a single Base transaction — same 32 bytes on-chain whether the batch is 10 or 10,000 customers.", 3800);
     hideCaption();
@@ -360,10 +374,13 @@
       if (pdfUrl) {
         const modal = document.createElement("div");
         modal.className = "autoplay-pdf-modal";
+        // Force inline disposition + PDF-viewer view fit for embed. The download
+        // button in the UI keeps its attachment disposition — unchanged.
+        const inlineUrl = pdfUrl + (pdfUrl.includes("?") ? "&" : "?") + "inline=1";
         modal.innerHTML = `
           <div class="ap-pdf-inner">
             <div class="ap-pdf-head">Compliance PDF · generated live from the batch run</div>
-            <iframe src="${pdfUrl}#zoom=110&toolbar=0" class="ap-pdf-frame"></iframe>
+            <iframe src="${inlineUrl}#view=FitH&zoom=100&toolbar=0" class="ap-pdf-frame"></iframe>
           </div>`;
         // Inject the styles for the modal on demand.
         if (!document.getElementById("ap-pdf-style")) {
@@ -428,6 +445,40 @@
     click("#drawer-tamper"); await sleep(900);
     ring("#drawer-verify-out");
     await caption("Try to lie · rejected", "Tampered DOB → Merkle path breaks. Cryptographic integrity, not a policy check.", 3200);
+
+    // Click a "why" button on a reviewed field to show the LLM explainer inline.
+    const drawerBody = document.querySelector(".drawer.open");
+    if (drawerBody) {
+      const scroll = drawerBody.querySelector(".drawer-body");
+      const whyBtns = drawerBody.querySelectorAll(".why-btn");
+      if (whyBtns.length) {
+        // Prefer a button on a NON-issued row (more interesting explanation)
+        let chosen = whyBtns[0];
+        for (const b of whyBtns) {
+          const row = b.closest("tr");
+          const sig = row?.querySelector(".signal.no");
+          if (sig) { chosen = b; break; }
+        }
+        chosen.scrollIntoView({ behavior: "smooth", block: "center" });
+        await sleep(600);
+        chosen.click();
+        await sleep(800);
+        const whyRow = chosen.closest("tr")?.nextSibling;
+        if (whyRow && whyRow.classList?.contains("why-row")) {
+          const r = whyRow.getBoundingClientRect();
+          highlight.style.top    = (r.top - 6) + "px";
+          highlight.style.left   = (r.left - 6) + "px";
+          highlight.style.width  = (r.width + 12) + "px";
+          highlight.style.height = (r.height + 12) + "px";
+          highlight.classList.add("show");
+        }
+        await caption(
+          "One-line explainer · live LLM",
+          "Click <em>why</em> on any field — the router (OpenAI 4o-mini here) writes a one-sentence explanation of which signal failed and what it means.",
+          4200
+        );
+      }
+    }
     hideCaption();
     click("#drawer-close"); await sleep(300);
 

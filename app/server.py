@@ -906,16 +906,19 @@ def document_analyze(seed: Optional[int] = None):
 
 
 @app.get("/api/report/pdf/{run_id}")
-def report_pdf(run_id: str):
+def report_pdf(run_id: str, inline: int = 0):
+    """`?inline=1` serves the PDF with Content-Disposition: inline so it
+    can be embedded in an <iframe>. Default is attachment for downloads."""
     bundle = _state["workflow_runs"].get(run_id)
     if not bundle:
         raise HTTPException(404, "run not found — regenerate the workflow run")
     pdf_bytes = pdf_report.build_pdf(bundle)
     wf_name = bundle.get("workflow", {}).get("name", "run")
     safe = "".join(c if c.isalnum() else "_" for c in wf_name)[:40]
+    disposition = "inline" if inline else "attachment"
     return Response(
         content=pdf_bytes, media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="finfabric-audit-{safe}.pdf"'},
+        headers={"Content-Disposition": f'{disposition}; filename="finfabric-audit-{safe}.pdf"'},
     )
 
 
