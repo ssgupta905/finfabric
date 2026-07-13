@@ -243,22 +243,50 @@
     }
     ring("#copilot-desc");
     await caption("Copilot brief", "Ask the copilot to compose a corporate onboarding workflow with GSTIN, PEP, AML.", 3000);
+    // Snapshot the currently loaded workflow name so we can detect a real change.
+    const wfNameBefore = document.getElementById("wf-name")?.textContent || "";
     click("#copilot-run");
     ring(".copilot-out");
-    await caption("Gemini composes the graph…", "The prompt is grounded — the copilot must use our capabilities library and validate the JSON before it lands.", 4000);
-    // Wait for the generated workflow to appear in the diagram
-    await waitUntil(() => {
-      const name = document.getElementById("wf-name")?.textContent || "";
-      return !name.includes("No workflow loaded");
-    }, 30000);
-    await sleep(600);
-    scrollTo("#wf-svg", 40);
-    ring("#wf-svg");
-    await caption(
-      "Fresh workflow, ready to run",
-      "The copilot wrote a valid topological workflow using only the capabilities registered in the platform. Each node runnable, savable, editable.",
-      4200
-    );
+    await caption("Gemini composes the graph…", "The prompt is grounded — the copilot must use our capabilities library and validate the JSON before it lands.", 3800);
+
+    // Wait up to 22s for the workflow to actually change. If Gemini is rate-limited
+    // or 5xx's, fall back to clicking the Corporate GSTIN preset so the demo keeps
+    // its narrative shape.
+    const changed = await waitUntil(() => {
+      const now = document.getElementById("wf-name")?.textContent || "";
+      return now && now !== wfNameBefore && !/no workflow/i.test(now);
+    }, 22000, 300);
+    // Also inspect the copilot-out banner for an explicit error class.
+    const copOut = document.getElementById("copilot-out");
+    const copFailed = copOut && copOut.classList.contains("err");
+
+    if (!changed || copFailed) {
+      // Graceful fallback: pick the seeded Corporate workflow so the storyboard
+      // continues even when Gemini quota is exhausted.
+      const presets = document.querySelectorAll(".preset-item");
+      let picked = null;
+      for (const p of presets) {
+        const name = p.querySelector(".preset-name")?.textContent || "";
+        if (/corporate/i.test(name)) { p.click(); picked = name; break; }
+      }
+      if (!picked && presets.length) { presets[0].click(); picked = "(first preset)"; }
+      await sleep(800);
+      ring("#wf-svg");
+      await caption(
+        "Loaded a preset instead",
+        "Gemini is rate-limited right now, so we've loaded the pre-built <em>Corporate GSTIN</em> preset — same shape, ready to run.",
+        4200
+      );
+    } else {
+      await sleep(400);
+      scrollTo("#wf-svg", 40);
+      ring("#wf-svg");
+      await caption(
+        "Fresh workflow, ready to run",
+        "The copilot wrote a valid topological workflow using only the capabilities registered in the platform. Each node runnable, savable, editable.",
+        4000
+      );
+    }
     hideCaption();
 
     // ============================================================
